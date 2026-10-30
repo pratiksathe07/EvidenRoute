@@ -1,0 +1,23 @@
+{
+  "incident_id": "INC-88912",
+  "channel": "#incident-payment-api-outage",
+  "started_at": "2026-10-28T14:15:00Z",
+  "messages": [
+    {
+      "user": "monitoring-bot",
+      "text": "ALERT: Payment API error rate spiked to 14.8% following deployment release-2026.10-rc2."
+    },
+    {
+      "user": "dev-oncall",
+      "text": "Investigating payment API. Looks like downstream timeout exceptions to PostgreSQL."
+    },
+    {
+      "user": "lead-arch",
+      "text": "The deployment misconfigured DB pool max size to 5 instead of 50. Rolling back the config hotfix now."
+    },
+    {
+      "user": "dev-oncall",
+      "text": "Hotfix deployed. Error rate back to normal at 0.02%. War room concluding."
+    }
+  ]
+}

@@ -1,11 +1,31 @@
+"""
+EvidenRoute - Unified Backend Application Entrypoint
+FastAPI application integrating Core Backend APIs (Sources, Budget Management, Dynamic Querying)
+and the Intelligence Engine (Query Analysis, Source Selection, Hybrid Retrieval, Conflict Detection & Sufficiency).
+"""
+
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.app.api.sources import router as sources_router, seed_sources_and_records
-from backend.app.api.query import router as query_router
-from backend.app.database.db import SessionLocal, init_db
+# Member 1 Backend Routers & Database
+try:
+    from backend.app.api.sources import router as sources_router, seed_sources_and_records
+    from backend.app.api.query import router as query_router
+    from backend.app.database.db import SessionLocal, init_db
+except ImportError:
+    from app.api.sources import router as sources_router, seed_sources_and_records
+    from app.api.query import router as query_router
+    from app.database.db import SessionLocal, init_db
+
+# Member 2 Intelligence Engine Router & Core Configuration
+try:
+    from .api.intelligence_routes import router as intelligence_router
+    from .core.config import settings
+except ImportError:
+    from backend.app.api.intelligence_routes import router as intelligence_router
+    from backend.app.core.config import settings
 
 logging.basicConfig(
     level=logging.INFO,
@@ -16,45 +36,51 @@ logger = logging.getLogger("evidenroute")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Initialize SQLite schema
-    logger.info("Initializing EvidenRoute database tables...")
-    init_db()
-
-    # Seed default sample data if not already populated
-    with SessionLocal() as db:
-        seed_sources_and_records(db)
-    logger.info("EvidenRoute database and seed sources initialized successfully.")
+    # Startup: Initialize SQLite schema & default records
+    logger.info("Initializing EvidenRoute database tables and seed sources...")
+    try:
+        init_db()
+        with SessionLocal() as db:
+            seed_sources_and_records(db)
+        logger.info("EvidenRoute database and seed sources initialized successfully.")
+    except Exception as e:
+        logger.warning(f"Database initialization warning: {e}")
 
     yield
-    # Shutdown logic if any
+    # Shutdown logic
     logger.info("EvidenRoute server shutting down.")
 
 
 app = FastAPI(
-    title="EvidenRoute API",
-    description="Intelligent Context Selection & Evidence Evaluation Engine",
+    title=settings.APP_NAME,
     version="1.0.0",
+    description="Intelligent Context Selection & Evidence Evaluation Engine",
+    docs_url="/docs",
+    redoc_url="/redoc",
     lifespan=lifespan,
 )
 
-# Enable CORS for local Vite/React frontend
+# Enable CORS for local React/Vite frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.CORS_ORIGINS if settings.CORS_ORIGINS else ["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Register API Routers
+# Register Member 1 Core API Routers
 app.include_router(sources_router)
 app.include_router(query_router)
+
+# Register Member 2 Intelligence API Routers
+app.include_router(intelligence_router, prefix=settings.API_V1_STR, tags=["Intelligence"])
 
 
 @app.get("/api/health", tags=["system"])
 def health_check():
     """
-    Returns system health and runtime metrics.
+    Returns system health and runtime metrics for Member 1 test contracts.
     """
     return {
         "status": "healthy",
@@ -64,6 +90,19 @@ def health_check():
     }
 
 
+@app.get("/", tags=["Root"])
+async def root():
+    return {
+        "project": "EvidenRoute",
+        "description": "Intelligent Context Selection Engine",
+        "status": "operational",
+        "health_check": f"{settings.API_V1_STR}/health",
+        "system_health": "/api/health",
+        "api_docs": "/docs",
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("backend.app.main:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run("app.main:app", host=settings.HOST, port=settings.PORT, reload=settings.DEBUG)
+
