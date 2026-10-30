@@ -1,0 +1,24 @@
+{
+  "meeting_id": "mtg-2026-10-q4-planning",
+  "title": "Product Planning & Q4 Strategic Roadmap Alignment",
+  "date": "2026-10-24",
+  "attendees": ["Sarah (Product Lead)", "Alex (Engineering VP)", "Pratik (Tech Lead)"],
+  "transcript": [
+    {
+      "speaker": "Sarah",
+      "text": "Let's review what was decided during the last product planning meeting regarding the checkout redesign."
+    },
+    {
+      "speaker": "Pratik",
+      "text": "We decided to prioritize the payment API resilience upgrade before opening the new regional gateways in Europe."
+    },
+    {
+      "speaker": "Alex",
+      "text": "Agreed. The decision was to freeze non-essential feature development until all database connection timeout mitigations are deployed."
+    },
+    {
+      "speaker": "Sarah",
+      "text": "Final decision recorded: Roll out v2.4 payment gateway, monitor latency metrics for two weeks, then start mobile SDK integration."
+    }
+  ]
+}

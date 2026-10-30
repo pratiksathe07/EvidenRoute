@@ -1,0 +1,12 @@
+{
+  "ticket_id": "ENG-4029",
+  "type": "Bug",
+  "title": "Payment API failing after latest deployment with connection timeout",
+  "status": "Closed",
+  "priority": "P0 - Critical",
+  "reporter": "qa-engineer",
+  "assignee": "backend-core",
+  "description": "After release-2026.10-rc2 deployment, payments began failing intermittently with 504 gateway timeout and 500 internal server error. Root cause was connection pool exhaustion under load.",
+  "labels": ["payment", "api", "deployment", "timeout", "regression"],
+  "resolution": "Increased pool limit to 50 connections and added retry backoff."
+}
