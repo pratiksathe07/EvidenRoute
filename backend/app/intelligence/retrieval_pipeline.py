@@ -12,17 +12,24 @@ Crucial Architectural Guarantees:
 from pathlib import Path
 import time
 from typing import Any, Dict, List, Optional
+from backend.app.services.budget_manager import BudgetManager
+from backend.app.schemas.budget import BudgetConfig
 from .embedding_provider import BaseEmbeddingProvider, EmbeddingProvider
 from .evidence_scorer import EvidenceScorer
 from .conflict_detector import ConflictDetector
 from .sufficiency_evaluator import SufficiencyEvaluator
 from .context_pruner import ContextPruner
 from .answer_readiness import AnswerReadinessEvaluator
+from .counter_evidence import CounterEvidenceService
+from .reliability_evaluator import EvidenceReliabilityEvaluator
 from .models import (
     AnswerReadinessResult,
     ConflictDetectionResult,
     ConflictReport,
+    CounterEvidenceResult,
     EvidencePassage,
+    EvidenceReliabilityResult,
+    EvidenceReliabilityStatus,
     EvidenceSufficiencyResult,
     PipelineDecisionTrace,
     PrunedContextResult,
@@ -45,7 +52,8 @@ class RetrievalPipeline:
     """
     Coordinates end-to-end evidence discovery:
     Question -> Query Analysis -> Source Selection -> Filtered Retrieval -> Evidence Scoring
-    -> Conflict Detection -> Sufficiency Evaluation -> Context Pruning -> Answer Readiness.
+    -> Conflict Detection -> Sufficiency Evaluation -> Counter-Evidence Search -> Re-evaluation
+    -> Evidence Reliability -> Context Pruning -> Answer Readiness.
     """
 
     def __init__(
@@ -58,6 +66,8 @@ class RetrievalPipeline:
         sufficiency_evaluator: Optional[SufficiencyEvaluator] = None,
         context_pruner: Optional[ContextPruner] = None,
         readiness_evaluator: Optional[AnswerReadinessEvaluator] = None,
+        counter_evidence_service: Optional[CounterEvidenceService] = None,
+        reliability_evaluator: Optional[EvidenceReliabilityEvaluator] = None,
         chunk_store: Optional[BaseChunkStore] = None,
         source_registry: Optional[BaseSourceRegistry] = None,
     ):
@@ -73,6 +83,13 @@ class RetrievalPipeline:
         self.sufficiency_evaluator = sufficiency_evaluator or SufficiencyEvaluator()
         self.context_pruner = context_pruner or ContextPruner()
         self.readiness_evaluator = readiness_evaluator or AnswerReadinessEvaluator()
+        self.counter_evidence_service = counter_evidence_service or CounterEvidenceService(
+            retriever=self.retriever,
+            chunk_store=self.chunk_store,
+            source_registry=self.source_registry,
+            evidence_scorer=self.evidence_scorer,
+        )
+        self.reliability_evaluator = reliability_evaluator or EvidenceReliabilityEvaluator()
 
 
     def run(
@@ -81,6 +98,10 @@ class RetrievalPipeline:
         top_k: int = 10,
         selection_config: Optional[SelectionConfig] = None,
         retrieval_config: Optional[RetrievalConfig] = None,
+        enable_stress_test: bool = False,
+        budget_manager: Optional[BudgetManager] = None,
+        max_budget_calls: Optional[int] = None,
+        max_budget_candidates: Optional[int] = None,
     ) -> RetrievalDecisionTrace:
         """
         Execute Phase 1 source selection followed by constrained Phase 2 retrieval and evidence ranking.
@@ -88,6 +109,13 @@ class RetrievalPipeline:
         start_time = time.perf_counter()
         stages: List[str] = []
         ret_cfg = retrieval_config or RetrievalConfig(top_k=top_k)
+        budget_mgr = budget_manager or BudgetManager(
+            BudgetConfig(
+                max_source_calls=max_budget_calls or 5,
+                max_candidates=max_budget_candidates or max(20, ret_cfg.top_k * 2),
+                max_tokens=15000,
+            )
+        )
 
         # -------------------------------------------------------------
         # STAGE 1 & 2: Query Analysis & Source Selection (Phase 1)
@@ -139,10 +167,22 @@ class RetrievalPipeline:
                 has_unresolved_contradictions=False,
             )
             empty_pruning = self.context_pruner.prune_context(passages=[])
+            empty_reliability = self.reliability_evaluator.evaluate_reliability(
+                query=question,
+                analysis=phase1_trace.analysis,
+                passages=[],
+                conflicts=[],
+            )
+            empty_counter = CounterEvidenceResult(
+                executed=False,
+                summary="Counter-evidence search bypassed: Zero sources selected.",
+            )
             empty_readiness = self.readiness_evaluator.evaluate_readiness(
                 sufficiency=empty_sufficiency,
                 conflict_result=empty_conflicts,
                 pruning_result=empty_pruning,
+                reliability=empty_reliability,
+                counter_evidence=empty_counter,
             )
             return RetrievalDecisionTrace(
                 query=question,
@@ -159,12 +199,17 @@ class RetrievalPipeline:
                     "reason": "zero_sources_selected",
                     "chunks_scanned": 0,
                     "top_k_limit": ret_cfg.top_k,
+                    "calls_consumed": 0,
+                    "candidates_consumed": 0,
+                    "tokens_consumed": 0,
                 },
                 trace_stages=stages,
                 conflicts=[],
                 sufficiency=empty_sufficiency,
                 pruned_context=empty_pruning,
                 answer_readiness=empty_readiness,
+                counter_evidence=empty_counter,
+                evidence_reliability=empty_reliability,
             )
 
         # -------------------------------------------------------------
@@ -178,6 +223,17 @@ class RetrievalPipeline:
             query=question,
             selected_source_ids=selected_source_ids,
             top_k=ret_cfg.top_k * 2,  # Fetch ample candidates for scoring
+        )
+
+        # Track budget consumption for primary retrieval calls
+        primary_text = " ".join(chunk.content for chunk, _, _ in bm25_matches)
+        budget_mgr.commit(
+            reserved_calls=0,
+            reserved_candidates=0,
+            reserved_tokens=0,
+            actual_calls=len(selected_source_ids),
+            actual_candidates=len(bm25_matches),
+            actual_tokens=BudgetManager.estimate_tokens(primary_text),
         )
 
         stages.append(
@@ -308,30 +364,116 @@ class RetrievalPipeline:
         )
 
         # -------------------------------------------------------------
-        # STAGE 8: Budget-Aware Context Pruning
+        # STAGE 8: Bounded Counter-Evidence Search & Re-Evaluation
         # -------------------------------------------------------------
-        pruned_res = self.context_pruner.prune_context(
-            passages=final_evidence,
-            conflicts=conflict_res.conflicts,
+        counter_res = CounterEvidenceResult(
+            executed=False,
+            summary="Counter-evidence search was not requested or was bypassed.",
         )
-        stages.append(
-            f"Stage 8: Context pruning: deduplicated {pruned_res.pruned_sentence_count} redundant sentences, "
-            f"preserved {pruned_res.conflict_passages_preserved_count} conflict passage(s), "
-            f"compression ratio {pruned_res.compression_ratio:.2f}."
-        )
+        challenge_passages: List[EvidencePassage] = []
 
-        # -------------------------------------------------------------
-        # STAGE 9: Final Answer Readiness Decision
-        # -------------------------------------------------------------
-        readiness_res = self.readiness_evaluator.evaluate_readiness(
-            sufficiency=sufficiency_res,
-            conflict_result=conflict_res,
-            pruning_result=pruned_res,
-        )
-        stages.append(
-            f"Stage 9: Answer readiness verdict: {readiness_res.readiness_verdict} "
-            f"(cleared to answer: {readiness_res.is_ready_to_answer})."
-        )
+        if enable_stress_test and sufficiency_res.recommended_action == "answer":
+            counter_res, challenge_passages = self.counter_evidence_service.search_counter_evidence(
+                query=question,
+                analysis=phase1_trace.analysis,
+                initial_evidence=final_evidence,
+                selected_source_ids=selected_source_ids,
+                budget_manager=budget_mgr,
+                max_candidates=3,
+                evidence_config=ret_cfg.evidence_config,
+            )
+            if challenge_passages:
+                final_evidence.extend(challenge_passages)
+                final_evidence.sort(
+                    key=lambda x: (
+                        x.evidence_score.final_evidence_score,
+                        x.evidence_score.relevance_score,
+                        x.authority_level,
+                    ),
+                    reverse=True,
+                )
+                final_evidence = final_evidence[: ret_cfg.top_k]
+                for rank_pos, ev in enumerate(final_evidence, start=1):
+                    ev.ranking_position = rank_pos
+                # Re-evaluate conflicts across combined set
+                conflict_res = self.conflict_detector.detect_conflicts(final_evidence)
+                # Re-evaluate sufficiency
+                sufficiency_res = self.sufficiency_evaluator.evaluate_sufficiency(
+                    query=question,
+                    analysis=phase1_trace.analysis,
+                    passages=final_evidence,
+                    conflicts=conflict_res.conflicts,
+                )
+            stages.append(
+                f"Stage 8: Counter-evidence search ({counter_res.impact_on_decision}): "
+                f"retrieved {len(challenge_passages)} passage(s), counter-evidence found: {counter_res.counter_evidence_found}."
+            )
+
+            # STAGE 9: Holistic Evidence Reliability Assessment
+            reliability_res = self.reliability_evaluator.evaluate_reliability(
+                query=question,
+                analysis=phase1_trace.analysis,
+                passages=final_evidence,
+                conflicts=conflict_res.conflicts,
+                counter_evidence=counter_res,
+            )
+            stages.append(
+                f"Stage 9: Evidence reliability evaluated: status '{reliability_res.status}', "
+                f"score {reliability_res.reliability_score:.2f}, independent sources {reliability_res.independent_sources_count}."
+            )
+
+            # STAGE 10: Budget-Aware Context Pruning
+            pruned_res = self.context_pruner.prune_context(
+                passages=final_evidence,
+                conflicts=conflict_res.conflicts,
+            )
+            stages.append(
+                f"Stage 10: Context pruning: deduplicated {pruned_res.pruned_sentence_count} redundant sentences, "
+                f"preserved {pruned_res.conflict_passages_preserved_count} conflict passage(s), "
+                f"compression ratio {pruned_res.compression_ratio:.2f}."
+            )
+
+            # STAGE 11: Final Answer Readiness Decision
+            readiness_res = self.readiness_evaluator.evaluate_readiness(
+                sufficiency=sufficiency_res,
+                conflict_result=conflict_res,
+                pruning_result=pruned_res,
+                reliability=reliability_res,
+                counter_evidence=counter_res,
+            )
+            stages.append(
+                f"Stage 11: Answer readiness verdict: {readiness_res.readiness_verdict} "
+                f"(cleared to answer: {readiness_res.is_ready_to_answer})."
+            )
+        else:
+            # Baseline / Phase 3 workflow when stress testing is disabled
+            reliability_res = self.reliability_evaluator.evaluate_reliability(
+                query=question,
+                analysis=phase1_trace.analysis,
+                passages=final_evidence,
+                conflicts=conflict_res.conflicts,
+                counter_evidence=counter_res,
+            )
+            pruned_res = self.context_pruner.prune_context(
+                passages=final_evidence,
+                conflicts=conflict_res.conflicts,
+            )
+            stages.append(
+                f"Stage 8: Context pruning: deduplicated {pruned_res.pruned_sentence_count} redundant sentences, "
+                f"preserved {pruned_res.conflict_passages_preserved_count} conflict passage(s), "
+                f"compression ratio {pruned_res.compression_ratio:.2f}."
+            )
+            readiness_res = self.readiness_evaluator.evaluate_readiness(
+                sufficiency=sufficiency_res,
+                conflict_result=conflict_res,
+                pruning_result=pruned_res,
+                reliability=reliability_res,
+                counter_evidence=counter_res,
+            )
+            stages.append(
+                f"Stage 9: Answer readiness verdict: {readiness_res.readiness_verdict} "
+                f"(cleared to answer: {readiness_res.is_ready_to_answer})."
+            )
 
         elapsed_ms = (time.perf_counter() - start_time) * 1000.0
 
@@ -341,6 +483,9 @@ class RetrievalPipeline:
             "passages_returned": len(final_evidence),
             "total_candidates_scanned": total_candidate_chunks,
             "skipped_sources_filtered": len(skipped_source_ids),
+            "calls_consumed": budget_mgr.calls_consumed,
+            "candidates_consumed": budget_mgr.candidates_consumed,
+            "tokens_consumed": budget_mgr.tokens_consumed,
         }
 
         return RetrievalDecisionTrace(
@@ -359,4 +504,6 @@ class RetrievalPipeline:
             sufficiency=sufficiency_res,
             pruned_context=pruned_res,
             answer_readiness=readiness_res,
+            counter_evidence=counter_res,
+            evidence_reliability=reliability_res,
         )

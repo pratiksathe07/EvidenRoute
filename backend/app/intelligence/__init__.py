@@ -17,6 +17,8 @@ from .models import (
     SelectionConfig,
     SourceMetadata,
     SourceRankResult,
+    IntentType,
+    InformationCategory,
     AnswerReadinessResult,
     ConflictDetectionResult,
     ConflictReport,
@@ -47,7 +49,20 @@ from .conflict_detector import ConflictDetector
 from .sufficiency_evaluator import SufficiencyEvaluator
 from .context_pruner import ContextPruner
 from .answer_readiness import AnswerReadinessEvaluator
+from .counter_evidence import CounterEvidenceService
+from .reliability_evaluator import EvidenceReliabilityEvaluator
+from .stress_testing import StressTestingFramework
+from .baseline_comparison import BaselineComparisonService
 from .retrieval_pipeline import RetrievalPipeline
+from .models import (
+    BaselineComparisonMetrics,
+    BaselineComparisonReport,
+    CounterEvidenceResult,
+    EvidenceReliabilityResult,
+    EvidenceReliabilityStatus,
+    StressTestScenarioResult,
+    StressTestSuiteReport,
+)
 
 __all__ = [
     # Models
@@ -79,6 +94,13 @@ __all__ = [
     "PruneContextRequest",
     "RecommendedAction",
     "SufficiencyStatus",
+    "CounterEvidenceResult",
+    "EvidenceReliabilityResult",
+    "EvidenceReliabilityStatus",
+    "StressTestScenarioResult",
+    "StressTestSuiteReport",
+    "BaselineComparisonMetrics",
+    "BaselineComparisonReport",
     # Engines & Services
     "QueryAnalyzer",
     "SourceRegistry",
@@ -100,6 +122,11 @@ __all__ = [
     "SufficiencyEvaluator",
     "ContextPruner",
     "AnswerReadinessEvaluator",
+    "CounterEvidenceService",
+    "EvidenceReliabilityEvaluator",
+    "StressTestingFramework",
+    "BaselineComparisonService",
     "RetrievalPipeline",
 ]
+
 

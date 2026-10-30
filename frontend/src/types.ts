@@ -120,6 +120,8 @@ export interface RetrievalDecisionTrace {
   sufficiency?: EvidenceSufficiencyResult;
   pruned_context?: PrunedContextResult;
   answer_readiness?: AnswerReadinessResult;
+  counter_evidence?: CounterEvidenceResult;
+  evidence_reliability?: EvidenceReliabilityResult;
 }
 
 export interface RetrieveResponse {
@@ -134,6 +136,35 @@ export interface RetrieveResponse {
   sufficiency?: EvidenceSufficiencyResult;
   pruned_context?: PrunedContextResult;
   answer_readiness?: AnswerReadinessResult;
+  counter_evidence?: CounterEvidenceResult;
+  evidence_reliability?: EvidenceReliabilityResult;
+}
+
+export interface CounterEvidenceResult {
+  executed: boolean;
+  challenge_query?: string | null;
+  counter_evidence_found: boolean;
+  supporting_evidence_found: boolean;
+  evidence_examined_count: number;
+  new_passages_retrieved_count: number;
+  budget_used_calls: number;
+  budget_exhausted: boolean;
+  impact_on_decision: string;
+  summary: string;
+  discovered_passages: EvidencePassage[];
+}
+
+export interface EvidenceReliabilityResult {
+  status: string;
+  reliability_score: number;
+  supporting_evidence_count: number;
+  contradictory_evidence_count: number;
+  independent_sources_count: number;
+  independent_source_ids: string[];
+  missing_information: string[];
+  confidence_limitations: string[];
+  recommended_action: string;
+  explanation: string;
 }
 
 // Phase 3 Types

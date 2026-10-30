@@ -230,13 +230,17 @@ class QueryOrchestrator:
         # -------------------------------------------------------------
         stress_result = None
         if outcome == DecisionOutcome.ANSWER and request.enable_stress_test:
-            t0 = time.time()
-            all_adapters = [SQLiteSourceAdapter(s.source_id, SessionLocal) for s in available_sources]
+            # Strictly constrain counterevidence search to Phase 1 selected sources
+            selected_adapters = [
+                SQLiteSourceAdapter(s.source_id, SessionLocal)
+                for s in available_sources
+                if s.source_id in selected_source_ids
+            ]
             stress_result, challenge_items = StressTestService.execute_stress_test(
                 tentative_answer=final_answer,
                 profile=profile,
                 initial_evidence=retrieved_evidence,
-                available_adapters=all_adapters,
+                available_adapters=selected_adapters,
                 budget_manager=budget_mgr,
             )
             duration_ms = (time.time() - t0) * 1000

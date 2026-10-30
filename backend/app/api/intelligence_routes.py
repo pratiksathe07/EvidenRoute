@@ -8,11 +8,19 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, status
 from ..core.config import settings
 from ..intelligence import (
+    AnswerReadinessEvaluator,
+    BaselineComparisonMetrics,
+    BaselineComparisonReport,
+    BaselineComparisonService,
     ChunkStore,
     ConflictDetector,
     ContextPruner,
+    CounterEvidenceResult,
+    CounterEvidenceService,
     DocumentChunker,
     EmbeddingProvider,
+    EvidenceReliabilityEvaluator,
+    EvidenceReliabilityResult,
     EvidenceScorer,
     IngestionReport,
     IngestionService,
@@ -23,8 +31,10 @@ from ..intelligence import (
     SourceMetadata,
     SourceRegistry,
     SourceSelector,
+    StressTestingFramework,
+    StressTestScenarioResult,
+    StressTestSuiteReport,
     SufficiencyEvaluator,
-    AnswerReadinessEvaluator,
 )
 from ..intelligence.models import (
     AnalyzeQueryRequest,
@@ -55,6 +65,8 @@ conflict_detector = ConflictDetector()
 sufficiency_evaluator = SufficiencyEvaluator()
 context_pruner = ContextPruner()
 readiness_evaluator = AnswerReadinessEvaluator()
+counter_evidence_service = CounterEvidenceService(chunk_store=ChunkStore, source_registry=SourceRegistry)
+reliability_evaluator = EvidenceReliabilityEvaluator()
 retrieval_pipeline = RetrievalPipeline(
     phase1_pipeline=pipeline,
     chunk_store=ChunkStore,
@@ -64,6 +76,18 @@ retrieval_pipeline = RetrievalPipeline(
     sufficiency_evaluator=sufficiency_evaluator,
     context_pruner=context_pruner,
     readiness_evaluator=readiness_evaluator,
+    counter_evidence_service=counter_evidence_service,
+    reliability_evaluator=reliability_evaluator,
+)
+stress_testing_framework = StressTestingFramework(
+    retrieval_pipeline=retrieval_pipeline,
+    conflict_detector=conflict_detector,
+    sufficiency_evaluator=sufficiency_evaluator,
+    reliability_evaluator=reliability_evaluator,
+    counter_evidence_service=counter_evidence_service,
+)
+baseline_comparison_service = BaselineComparisonService(
+    retrieval_pipeline=retrieval_pipeline,
 )
 
 # Cache last ingestion report
@@ -240,6 +264,9 @@ async def retrieve_evidence(payload: RetrieveRequest) -> RetrieveResponse:
         top_k=payload.top_k,
         selection_config=payload.selection_config,
         retrieval_config=payload.retrieval_config,
+        enable_stress_test=payload.enable_stress_test,
+        max_budget_calls=payload.max_budget_calls,
+        max_budget_candidates=payload.max_budget_candidates,
     )
 
     return RetrieveResponse(
@@ -254,6 +281,8 @@ async def retrieve_evidence(payload: RetrieveRequest) -> RetrieveResponse:
         sufficiency=trace.sufficiency,
         pruned_context=trace.pruned_context,
         answer_readiness=trace.answer_readiness,
+        counter_evidence=trace.counter_evidence,
+        evidence_reliability=trace.evidence_reliability,
     )
 
 
@@ -372,4 +401,35 @@ async def prune_context_endpoint(payload: PruneContextRequest) -> PrunedContextR
         conflicts=payload.conflicts,
         max_context_chars=payload.max_context_chars,
     )
+
+
+# ==============================================================
+# STEP 4 ENDPOINTS: STRESS-TEST & BASELINE COMPARISON
+# ==============================================================
+
+@router.post(
+    "/stress-test",
+    response_model=StressTestSuiteReport,
+    summary="Run Comprehensive 14-Scenario Evidence Stress Test",
+    description="Executes the full 14-scenario evidence stress test evaluating adversarial and boundary conditions."
+)
+async def run_stress_test_endpoint() -> StressTestSuiteReport:
+    """Run all 14 evidence stress test scenarios and return aggregated audit report."""
+    if ChunkStore.count() == 0:
+        ensure_initial_ingestion()
+    return stress_testing_framework.run_all_scenarios()
+
+
+@router.get(
+    "/benchmark/baseline-comparison",
+    response_model=BaselineComparisonReport,
+    summary="Benchmark Comparison: Naive Baseline vs EvidenRoute Engine",
+    description="Measures precision, recall, latency, budget, and irrelevant evidence reduction across benchmark questions."
+)
+async def baseline_comparison_endpoint(limit: Optional[int] = None) -> BaselineComparisonReport:
+    """Execute side-by-side comparative evaluation of naive baseline vs EvidenRoute engine."""
+    if ChunkStore.count() == 0:
+        ensure_initial_ingestion()
+    return baseline_comparison_service.run_comparison(max_queries=limit)
+
 

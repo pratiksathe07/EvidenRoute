@@ -376,6 +376,98 @@ class PrunedContextResult(BaseModel):
     compression_ratio: float
 
 
+# ==============================================================
+# STEP 4: EVIDENCE STRESS TESTING & COUNTER-EVIDENCE MODELS
+# ==============================================================
+
+class CounterEvidenceResult(BaseModel):
+    """Details of targeted counter-evidence search executed within remaining budget."""
+    executed: bool = False
+    challenge_query: Optional[str] = None
+    counter_evidence_found: bool = False
+    supporting_evidence_found: bool = False
+    evidence_examined_count: int = 0
+    new_passages_retrieved_count: int = 0
+    budget_used_calls: int = 0
+    budget_exhausted: bool = False
+    impact_on_decision: str = Field("none", description="confirmed_answer, weakened_confidence, overturned_answer, none")
+    summary: str = Field("Counter-evidence search was not executed or not requested.")
+    discovered_passages: List[EvidencePassage] = Field(default_factory=list)
+
+
+class EvidenceReliabilityStatus(str, Enum):
+    """Categorization of overall evidence set reliability."""
+    HIGH = "high_reliability"
+    MODERATE = "moderate_reliability"
+    UNRELIABLE = "unreliable"
+    CONTRADICTED = "contradicted"
+    INSUFFICIENT = "insufficient"
+
+
+class EvidenceReliabilityResult(BaseModel):
+    """Comprehensive reliability assessment of the combined evidence set."""
+    status: str = Field(EvidenceReliabilityStatus.MODERATE.value, description="high_reliability, moderate_reliability, unreliable, contradicted, insufficient")
+    reliability_score: float = Field(..., ge=0.0, le=1.0)
+    supporting_evidence_count: int = 0
+    contradictory_evidence_count: int = 0
+    independent_sources_count: int = 0
+    independent_source_ids: List[str] = Field(default_factory=list)
+    missing_information: List[str] = Field(default_factory=list)
+    confidence_limitations: List[str] = Field(default_factory=list)
+    recommended_action: str = Field("answer", description="answer, retrieve_more, clarify, abstain")
+    explanation: str
+
+
+class StressTestScenarioResult(BaseModel):
+    """Structured audit of an individual stress-testing scenario."""
+    scenario_id: int
+    scenario_name: str
+    query: str
+    expected_behavior: str
+    actual_verdict: str
+    decision_outcome: str
+    reliability_status: str
+    conflicts_detected: int
+    counter_evidence_found: bool
+    passed: bool
+    details: Dict[str, Any] = Field(default_factory=dict)
+
+
+class StressTestSuiteReport(BaseModel):
+    """Aggregated results across all 14 evidence stress-test scenarios."""
+    total_scenarios: int
+    passed_scenarios: int
+    failed_scenarios: int
+    pass_rate_pct: float
+    results: List[StressTestScenarioResult]
+    execution_time_ms: float
+
+
+class BaselineComparisonMetrics(BaseModel):
+    """Measured performance metrics for either Baseline or EvidenRoute."""
+    mode: str
+    total_queries: int
+    average_precision: float
+    average_recall: float
+    average_relevance: float
+    source_selection_accuracy: float
+    contradiction_accuracy: float
+    sufficiency_accuracy: float
+    average_passages_retrieved: float
+    average_latency_ms: float
+    budget_calls_consumed: int
+    budget_tokens_consumed: int
+    irrelevant_evidence_reduction_pct: float
+
+
+class BaselineComparisonReport(BaseModel):
+    """Direct comparison between naive full-source retrieval and EvidenRoute engine."""
+    baseline_metrics: BaselineComparisonMetrics
+    evidenroute_metrics: BaselineComparisonMetrics
+    improvements: Dict[str, Any] = Field(default_factory=dict)
+    evaluation_timestamp: str
+
+
 class AnswerReadinessResult(BaseModel):
     """Final answer-readiness determination synthesized across sufficiency, conflicts, and pruning."""
     is_ready_to_answer: bool
@@ -386,6 +478,7 @@ class AnswerReadinessResult(BaseModel):
     conflicts_summary: Dict[str, Any] = Field(default_factory=dict)
     sufficiency_summary: Dict[str, Any] = Field(default_factory=dict)
     pruning_summary: Dict[str, Any] = Field(default_factory=dict)
+    reliability_summary: Dict[str, Any] = Field(default_factory=dict)
 
 
 class RetrievalDecisionTrace(BaseModel):
@@ -406,16 +499,22 @@ class RetrievalDecisionTrace(BaseModel):
     sufficiency: Optional[EvidenceSufficiencyResult] = None
     pruned_context: Optional[PrunedContextResult] = None
     answer_readiness: Optional[AnswerReadinessResult] = None
+    # Step 4 Additions
+    counter_evidence: Optional[CounterEvidenceResult] = None
+    evidence_reliability: Optional[EvidenceReliabilityResult] = None
 
 
 # --- Phase 2 & 3 API Models ---
 
 class RetrieveRequest(BaseModel):
-    """Request payload for Phase 1 + Phase 2 + Phase 3 integrated retrieval."""
+    """Request payload for Phase 1 + Phase 2 + Phase 3 + Step 4 integrated retrieval."""
     question: str = Field(..., min_length=1, description="User's query string")
     top_k: int = Field(10, ge=1, le=50, description="Maximum evidence passages to return")
     selection_config: Optional[SelectionConfig] = Field(None, description="Optional custom source selection weights")
     retrieval_config: Optional[RetrievalConfig] = Field(None, description="Optional custom retrieval and evidence weights")
+    enable_stress_test: bool = Field(False, description="Whether to execute counter-evidence search and reliability evaluation")
+    max_budget_calls: Optional[int] = Field(None, description="Optional custom max source calls override")
+    max_budget_candidates: Optional[int] = Field(None, description="Optional custom max candidate quota override")
 
 
 class RetrieveResponse(BaseModel):
@@ -432,6 +531,9 @@ class RetrieveResponse(BaseModel):
     sufficiency: Optional[EvidenceSufficiencyResult] = None
     pruned_context: Optional[PrunedContextResult] = None
     answer_readiness: Optional[AnswerReadinessResult] = None
+    # Step 4 Additions
+    counter_evidence: Optional[CounterEvidenceResult] = None
+    evidence_reliability: Optional[EvidenceReliabilityResult] = None
 
 
 class RetrievalHealthResponse(BaseModel):

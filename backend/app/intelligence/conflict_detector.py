@@ -58,6 +58,16 @@ class ConflictDetector:
                 r"(?:error|status|code|err_)[^0-9\n.]{0,20}?(500|502|503|504|400|401|403|404)\b",
                 "code",
             ),
+            (
+                "sla_credit_percent",
+                r"(?:sla|credit|refund|discount|availability)[^0-9\n.]{0,30}?(\d+)\s*%",
+                "percent",
+            ),
+            (
+                "refund_window_days",
+                r"(?:refund|return|money-back)[^0-9\n.]{0,30}?(\d+)\s*days",
+                "days",
+            ),
         ]
 
         # Polarity / State Opposition pairs: (positive_regex, negative_regex, topic_label)
@@ -398,12 +408,17 @@ class ConflictDetector:
                 )
 
         # 4. Default: Direct Contradiction
+        hint = "Clarify current configuration or verify authoritative system registry."
+        if abs(p1.authority_level - p2.authority_level) >= 0.25:
+            higher = p1 if p1.authority_level > p2.authority_level else p2
+            hint = f"Prioritize authoritative documentation from '{higher.source_name}' (authority {higher.authority_level:.2f}) over lower-authority channels."
+
         return (
             ConflictType.DIRECT_CONTRADICTION,
             ConflictSeverity.CRITICAL,
             True,
             f"Direct contradiction on {topic}: '{p1.source_name}' claims '{val1}' while '{p2.source_name}' claims '{val2}'.",
-            "Clarify current configuration or verify authoritative system registry.",
+            hint,
         )
 
     def _split_sentences(self, text: str) -> List[str]:
