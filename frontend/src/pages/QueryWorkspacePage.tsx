@@ -1,281 +1,336 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useRef, useEffect, KeyboardEvent } from 'react';
 import {
-  RotateCw,
-  AlertCircle,
-  X,
-  FileSearch,
+  Send,
+  Sparkles,
+  Bot,
+  User,
+  Plus,
+  BookOpen,
+  ArrowRight,
 } from 'lucide-react';
-import { RetrieveResponse, RetrievalHealthResponse } from '../types/retrieval';
-import { SourceMetadata } from '../types/sourceSelection';
-import { retrieveEvidence, getRetrievalHealth } from '../services/retrievalService';
-import { getAvailableSources } from '../services/sourceSelectionService';
-
-import { QueryInputPanel } from '../components/query-workspace/QueryInputPanel';
-import { QuerySummary } from '../components/query-workspace/QuerySummary';
-import { SourceResultsPanel } from '../components/query-workspace/SourceResultsPanel';
-import { EvidenceList } from '../components/query-workspace/EvidenceList';
-import { DecisionTracePanel } from '../components/query-workspace/DecisionTracePanel';
-import { InsufficientEvidenceNotice } from '../components/query-workspace/InsufficientEvidenceNotice';
-import { ConflictInspector } from '../components/query-workspace/ConflictInspector';
-
+import apiClient from '../services/api';
+import { QueryResponse } from '../types/sourceSelection';
 import './QueryWorkspacePage.css';
 
-const DEFAULT_QUERY = 'Why did the payment API fail after deployment?';
+interface CitationItem {
+  id: string;
+  title: string;
+  sourceName?: string;
+}
+
+interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  citations?: CitationItem[];
+  outcome?: 'ANSWER' | 'ABSTAIN' | 'RETRIEVE_MORE' | 'ERROR';
+  timestamp: string;
+  isError?: boolean;
+}
+
+const STARTER_PROMPTS = [
+  'Why did the payment API fail after deployment?',
+  'What is the database connection timeout limit?',
+  'What is the employee leave policy for parental leave?',
+  'How do quantum warp drives operate on Mars?',
+];
 
 export const QueryWorkspacePage: React.FC = () => {
-  // Query state
-  const [query, setQuery] = useState<string>(DEFAULT_QUERY);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [inputValue, setInputValue] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [validationError, setValidationError] = useState<string | null>(null);
-  const [apiError, setApiError] = useState<string | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Response state
-  const [retrievalResult, setRetrievalResult] = useState<RetrieveResponse | null>(null);
-  const [lastExecutedQuery, setLastExecutedQuery] = useState<string | null>(null);
-
-  // Auxiliary backend state
-  const [availableSources, setAvailableSources] = useState<SourceMetadata[]>([]);
-  const [healthStatus, setHealthStatus] = useState<RetrievalHealthResponse | null>(null);
-  const [isBackendHealthy, setIsBackendHealthy] = useState<boolean>(true);
-
-  // Prevent duplicate concurrent submissions
-  const isExecutingRef = useRef<boolean>(false);
-
-  // Initial load: Fetch sources metadata and probe retrieval subsystem health
-  const loadDiagnostics = useCallback(async () => {
-    try {
-      const [sourcesRes, healthRes] = await Promise.all([
-        getAvailableSources(),
-        getRetrievalHealth(),
-      ]);
-
-      if (sourcesRes.data) {
-        setAvailableSources(sourcesRes.data);
-      }
-
-      if (healthRes.data) {
-        setHealthStatus(healthRes.data);
-        setIsBackendHealthy(healthRes.data.status === 'healthy' || healthRes.isAvailable);
-      } else {
-        setIsBackendHealthy(sourcesRes.isAvailable);
-      }
-    } catch {
-      setIsBackendHealthy(false);
-    }
-  }, []);
+  // Auto-scroll to bottom of conversation
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
 
   useEffect(() => {
-    loadDiagnostics();
-  }, [loadDiagnostics]);
+    scrollToBottom();
+  }, [messages, isLoading]);
 
-  // Main submission handler
-  const handleRunQuery = async () => {
-    const trimmed = query.trim();
-
-    if (!trimmed) {
-      setValidationError('Please enter a query or question before executing retrieval.');
-      return;
+  // Adjust textarea height automatically
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInputValue(e.target.value);
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`;
     }
+  };
 
-    if (isExecutingRef.current) {
-      return;
+  const handleNewChat = () => {
+    setMessages([]);
+    setInputValue('');
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.focus();
     }
+  };
 
-    setValidationError(null);
-    setApiError(null);
+  const handleSendMessage = async (textToSend?: string) => {
+    const query = (textToSend ?? inputValue).trim();
+    if (!query || isLoading) return;
+
+    const userMessageId = `user_${Date.now()}`;
+    const userMessage: ChatMessage = {
+      id: userMessageId,
+      role: 'user',
+      content: query,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+
+    setMessages((prev) => [...prev, userMessage]);
+    setInputValue('');
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
     setIsLoading(true);
-    isExecutingRef.current = true;
 
     try {
-      const response = await retrieveEvidence({
-        question: trimmed,
-        top_k: 10,
-        selection_config: null,
-        retrieval_config: null,
+      // Send question to actual backend /api/query
+      const response = await apiClient.post<QueryResponse>('/api/query', {
+        question: query,
+        budget: {
+          max_source_calls: 5,
+          max_candidates: 20,
+          max_tokens: 4000,
+        },
+        enable_stress_test: true,
       });
 
-      if (response.data) {
-        // Success: replace previous result
-        setRetrievalResult(response.data);
-        setLastExecutedQuery(trimmed);
-        setApiError(null);
+      const data = response.data;
+      const outcome = (data.outcome as 'ANSWER' | 'ABSTAIN' | 'RETRIEVE_MORE') || 'ANSWER';
+      let assistantContent = '';
+      const citations: CitationItem[] = [];
+
+      if (outcome === 'ANSWER') {
+        if (data.final_answer && data.final_answer.trim()) {
+          assistantContent = data.final_answer;
+        } else {
+          // Honest missing capability report when LLM is unconfigured
+          assistantContent =
+            'The backend identified relevant evidence passages across selected sources, but LLM generative answer synthesis is not configured on this server (GEMINI_API_KEY is not set). You can explore the retrieved passages in the Evidence Explorer.';
+        }
+      } else if (outcome === 'ABSTAIN') {
+        assistantContent =
+          data.abstention_reason ||
+          'The system abstained: Insufficient authoritative evidence was found to answer this question reliably.';
       } else {
-        // Failure: preserve previous result, show error clearly
-        setApiError(
-          response.error ||
-            'The retrieval engine failed to process your inquiry. Please ensure the backend is active.'
-        );
+        assistantContent =
+          data.abstention_reason ||
+          data.final_answer ||
+          'Additional context retrieval is required before a definitive answer can be determined.';
       }
+
+      // Extract actual citations returned by backend
+      if (Array.isArray(data.citations) && data.citations.length > 0) {
+        data.citations.forEach((citeId) => {
+          const matchedEvidence = data.retrieved_evidence?.find(
+            (e) => e.evidence_id === citeId
+          );
+          citations.push({
+            id: citeId,
+            title: matchedEvidence?.title || citeId,
+            sourceName: matchedEvidence?.source_id,
+          });
+        });
+      }
+
+      const assistantMessage: ChatMessage = {
+        id: `asst_${Date.now()}`,
+        role: 'assistant',
+        content: assistantContent,
+        citations: citations.length > 0 ? citations : undefined,
+        outcome,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+
+      setMessages((prev) => [...prev, assistantMessage]);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'An unexpected network error occurred.';
-      setApiError(msg);
+      const errorMsg =
+        err instanceof Error
+          ? err.message
+          : 'Backend query service is unreachable (POST /api/query). Ensure the server is running on port 8000.';
+
+      const errorMessage: ChatMessage = {
+        id: `err_${Date.now()}`,
+        role: 'assistant',
+        content: `Error: ${errorMsg}`,
+        outcome: 'ERROR',
+        isError: true,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+
+      setMessages((prev) => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
-      isExecutingRef.current = false;
     }
   };
 
-  const handleClearQuery = () => {
-    setQuery('');
-    setValidationError(null);
-  };
-
-  const handleSelectExample = (example: string) => {
-    setQuery(example);
-    setValidationError(null);
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
   };
 
   return (
-    <div className="qw-page-container">
-      {/* 1. Page Header */}
-      <header className="qw-page-header">
-        <div className="qw-page-title-group">
-          <div className="qw-badge-row">
-            <span className="qw-step-badge">Step 4 Engine</span>
-            <span className={`qw-status-pill ${isBackendHealthy ? 'online' : 'offline'}`}>
-              <span className={`status-indicator-dot ${isBackendHealthy ? 'pulse' : ''}`} />
-              <span>
-                {isBackendHealthy
-                  ? healthStatus?.bm25_status === 'ready'
-                    ? 'Retrieval Subsystem Online (BM25 Ready)'
-                    : 'Backend Online'
-                  : 'Backend Offline'}
-              </span>
-            </span>
+    <div className="qw-chat-container">
+      {/* 1. Header */}
+      <header className="qw-chat-header">
+        <div className="qw-chat-header-info">
+          <div className="qw-chat-avatar-brand">
+            <Bot size={20} />
           </div>
-
-          <h1 className="qw-page-title">Query Workspace & Evidence Retrieval</h1>
-          <p className="qw-page-subtitle">
-            Enter a natural-language question to orchestrate context sources, retrieve grounded evidence
-            passages, and inspect explainable 4D scoring traces.
-          </p>
+          <div className="qw-chat-title-group">
+            <h2 className="qw-chat-title">
+              Query Workspace
+              <span className="qw-status-pill-mini">
+                <span className="qw-status-dot-mini" />
+                Live
+              </span>
+            </h2>
+            <p className="qw-chat-subtitle">
+              Ask questions to receive verified answers grounded in your enterprise knowledge
+            </p>
+          </div>
         </div>
 
-        <div className="qw-header-actions">
+        <div className="qw-chat-header-actions">
           <button
             type="button"
-            className="qw-reload-btn"
-            onClick={loadDiagnostics}
-            title="Refresh backend subsystem diagnostics"
+            className="qw-new-chat-btn"
+            onClick={handleNewChat}
+            title="Start a new chat conversation"
           >
-            <RotateCw size={14} />
-            <span>Sync Engine</span>
+            <Plus size={15} />
+            <span>New Chat</span>
           </button>
         </div>
       </header>
 
-      {/* 2. Top API Error Banner (if error occurred, preserves previous result below) */}
-      {apiError && (
-        <div className="qw-alert-banner" role="alert">
-          <div className="qw-alert-icon">
-            <AlertCircle size={20} />
-          </div>
-          <div className="qw-alert-content">
-            <div className="qw-alert-title">Retrieval Query Failed</div>
-            <div className="qw-alert-desc">{apiError}</div>
-          </div>
-          <button
-            type="button"
-            className="qw-alert-dismiss"
-            onClick={() => setApiError(null)}
-            aria-label="Dismiss error"
-          >
-            <X size={16} />
-          </button>
-        </div>
-      )}
+      {/* 2. Messages Feed */}
+      <div className="qw-chat-messages-container" aria-label="Conversation Feed">
+        {messages.length === 0 ? (
+          <div className="qw-chat-empty-state">
+            <div className="qw-empty-brand-icon">
+              <Sparkles size={28} />
+            </div>
+            <h3 className="qw-empty-headline">How can I help you today?</h3>
+            <p className="qw-empty-subtext">
+              Type any question below. EvidenRoute will evaluate context relevance, score evidence,
+              and return the verified backend answer.
+            </p>
 
-      {/* 3. Query Input Section */}
-      <QueryInputPanel
-        query={query}
-        setQuery={setQuery}
-        onSubmit={handleRunQuery}
-        onClear={handleClearQuery}
-        isLoading={isLoading}
-        validationError={validationError}
-        apiError={apiError}
-      />
-
-      {/* 4. Query Execution Results or Initial Empty State */}
-      {retrievalResult ? (
-        <main className="qw-results-container" aria-label="Query Retrieval Results">
-          {/* Section F: Insufficient Evidence or Abstention Notice */}
-          <InsufficientEvidenceNotice
-            readiness={retrievalResult.answer_readiness}
-            sufficiency={retrievalResult.sufficiency}
-          />
-
-          {/* Section F: Detected Contradictions & Divergences */}
-          {retrievalResult.conflicts && retrievalResult.conflicts.length > 0 && (
-            <ConflictInspector conflicts={retrievalResult.conflicts} />
-          )}
-
-          {/* 2-Column Grid: Section B (Query Summary) & Section C (Source Routing) */}
-          <div className="qw-two-col-grid">
-            {/* Section B: Query Execution Summary */}
-            <QuerySummary response={retrievalResult} />
-
-            {/* Section C: Selected and Skipped Sources */}
-            <SourceResultsPanel
-              selectedSources={retrievalResult.selected_sources}
-              skippedSources={retrievalResult.skipped_sources}
-              allAvailableSources={availableSources}
-            />
-          </div>
-
-          {/* Section D: Retrieved Evidence Panel */}
-          <EvidenceList
-            evidence={retrievalResult.retrieved_evidence || []}
-            hasExecuted={Boolean(lastExecutedQuery)}
-            isLoading={isLoading}
-          />
-
-          {/* Section E: Decision Trace Panel */}
-          {retrievalResult.decision_trace && (
-            <DecisionTracePanel trace={retrievalResult.decision_trace} />
-          )}
-        </main>
-      ) : (
-        /* Initial Empty State before first run */
-        <div className="qw-initial-empty">
-          <div className="qw-empty-icon-wrap" aria-hidden="true">
-            <FileSearch size={32} />
-          </div>
-          <h3 className="qw-empty-title">Ready for Inquiry Orchestration</h3>
-          <p className="qw-empty-desc">
-            Submit a question above to execute real-time intent classification, pre-retrieval routing across
-            enterprise sources, bounded candidate retrieval, and 4D evidence evaluation.
-          </p>
-          <div className="qw-empty-suggestions">
-            <span className="qw-empty-suggestions-label">Try an example inquiry:</span>
-            <div className="qw-suggest-chips">
-              <button
-                type="button"
-                className="qw-suggest-chip"
-                onClick={() => handleSelectExample('Why did the payment API fail after deployment?')}
-              >
-                Why did the payment API fail after deployment?
-              </button>
-              <button
-                type="button"
-                className="qw-suggest-chip"
-                onClick={() => handleSelectExample('What is the database connection timeout limit?')}
-              >
-                What is the database connection timeout limit?
-              </button>
-              <button
-                type="button"
-                className="qw-suggest-chip"
-                onClick={() =>
-                  handleSelectExample('How do quantum teleportation warp drives operate on Mars?')
-                }
-              >
-                Quantum warp drives on Mars (Test Abstention)
-              </button>
+            <div className="qw-empty-prompt-chips">
+              {STARTER_PROMPTS.map((prompt) => (
+                <button
+                  key={prompt}
+                  type="button"
+                  className="qw-empty-prompt-chip"
+                  onClick={() => handleSendMessage(prompt)}
+                >
+                  <span>{prompt}</span>
+                  <ArrowRight size={14} className="qw-empty-prompt-chip-icon" />
+                </button>
+              ))}
             </div>
           </div>
-        </div>
-      )}
+        ) : (
+          messages.map((msg) => (
+            <div key={msg.id} className={`qw-message-row ${msg.role}`}>
+              <div className={`qw-message-avatar ${msg.role}`}>
+                {msg.role === 'user' ? <User size={16} /> : <Bot size={16} />}
+              </div>
+
+              <div
+                className={`qw-message-bubble ${
+                  msg.outcome === 'ABSTAIN' ? 'abstain' : ''
+                } ${msg.isError ? 'error' : ''}`}
+              >
+                <p className="qw-message-text">{msg.content}</p>
+
+                {/* Actual Citations Returned by Backend */}
+                {msg.citations && msg.citations.length > 0 && (
+                  <div className="qw-citations-container">
+                    <span className="qw-citations-label">
+                      <BookOpen size={12} />
+                      Citations
+                    </span>
+                    <div className="qw-citations-list">
+                      {msg.citations.map((cite) => (
+                        <span
+                          key={cite.id}
+                          className="qw-citation-chip"
+                          title={cite.sourceName ? `Source: ${cite.sourceName}` : undefined}
+                        >
+                          {cite.title}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <span className="qw-message-timestamp">{msg.timestamp}</span>
+              </div>
+            </div>
+          ))
+        )}
+
+        {/* Loading Indicator */}
+        {isLoading && (
+          <div className="qw-message-row assistant">
+            <div className="qw-message-avatar assistant">
+              <Bot size={16} />
+            </div>
+            <div className="qw-message-bubble">
+              <div className="qw-typing-indicator" aria-label="EvidenRoute is generating answer">
+                <span className="qw-typing-dot" />
+                <span className="qw-typing-dot" />
+                <span className="qw-typing-dot" />
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* 3. Message Input at Bottom */}
+      <footer className="qw-chat-input-bar">
+        <form
+          className="qw-chat-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleSendMessage();
+          }}
+        >
+          <textarea
+            ref={textareaRef}
+            className="qw-chat-textarea"
+            placeholder="Ask a question about deployments, APIs, policies, or database issues..."
+            rows={1}
+            value={inputValue}
+            onChange={handleInputChange}
+            onKeyDown={handleKeyDown}
+            disabled={isLoading}
+          />
+          <button
+            type="submit"
+            className="qw-send-btn"
+            disabled={!inputValue.trim() || isLoading}
+            aria-label="Send message"
+            title="Send message"
+          >
+            <Send size={16} />
+          </button>
+        </form>
+        <p className="qw-input-helper-text">
+          Press Enter to send, Shift + Enter for a new line. Answers are verified from local knowledge.
+        </p>
+      </footer>
     </div>
   );
 };

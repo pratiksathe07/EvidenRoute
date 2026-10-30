@@ -70,13 +70,10 @@ export const SourceSelectionPage: React.FC = () => {
     setBackendError(null);
     setIsLoading(true);
 
-    // Call query orchestration endpoint: POST /api/query
-    const result = await getIntelligencePlan(
-      {
-        question: trimmed,
-      },
-      availableSources
-    );
+    // Call context selection plan endpoint: POST /api/intelligence/plan
+    const result = await getIntelligencePlan({
+      question: trimmed,
+    });
 
     if (result.isAvailable && result.data && result.data.decision_trace) {
       setPlanResult(result.data);

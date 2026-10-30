@@ -16,6 +16,22 @@ export interface ServiceResponse<T> {
   isAvailable: boolean;
 }
 
+export interface IntelligenceHealthResponse {
+  status: string;
+  query_analyzer: string;
+  source_registry: string;
+  source_selector: string;
+  external_llm_integration: string;
+  active_sources_count: number;
+  environment: string;
+}
+
+export interface IngestionStatusResponse {
+  status: string;
+  total_chunks_indexed: number;
+  last_report?: Record<string, unknown> | null;
+}
+
 /**
  * 1. Check Backend & Engine Health (GET /api/health)
  * Real backend response: { "status": "healthy", "service": "...", "version": "1.0.0", "database": "sqlite" }
@@ -29,7 +45,7 @@ export async function getSystemHealth(): Promise<ServiceResponse<SystemHealthRes
       isAvailable: true,
     };
   } catch (err: unknown) {
-    const errorMessage = err instanceof Error ? err.message : 'Backend connection unavailable';
+    const errorMessage = err instanceof Error ? err.message : 'Backend connection unavailable (/api/health)';
     return {
       data: null,
       error: errorMessage,
@@ -39,8 +55,50 @@ export async function getSystemHealth(): Promise<ServiceResponse<SystemHealthRes
 }
 
 /**
- * 2. Fetch Connected Sources (GET /api/sources)
- * Real backend response: List[SourceInfo]
+ * 2. Check Intelligence Health (GET /api/intelligence/health)
+ */
+export async function getIntelligenceHealth(): Promise<ServiceResponse<IntelligenceHealthResponse>> {
+  try {
+    const response = await apiClient.get<IntelligenceHealthResponse>('/api/intelligence/health');
+    return {
+      data: response.data,
+      error: null,
+      isAvailable: true,
+    };
+  } catch (err: unknown) {
+    const errorMessage = err instanceof Error ? err.message : 'Intelligence health endpoint unavailable';
+    return {
+      data: null,
+      error: errorMessage,
+      isAvailable: false,
+    };
+  }
+}
+
+/**
+ * 3. Fetch Ingestion Status (GET /api/intelligence/ingestion-status)
+ */
+export async function getIngestionStatus(): Promise<ServiceResponse<IngestionStatusResponse>> {
+  try {
+    const response = await apiClient.get<IngestionStatusResponse>('/api/intelligence/ingestion-status');
+    return {
+      data: response.data,
+      error: null,
+      isAvailable: true,
+    };
+  } catch (err: unknown) {
+    const errorMessage = err instanceof Error ? err.message : 'Ingestion status endpoint unavailable';
+    return {
+      data: null,
+      error: errorMessage,
+      isAvailable: false,
+    };
+  }
+}
+
+/**
+ * 4. Fetch Connected Sources (GET /api/sources)
+ * Real backend response: List[SourceInfo] from database
  */
 export async function getSources(): Promise<ServiceResponse<SourceItem[]>> {
   try {
@@ -74,7 +132,7 @@ export async function getSources(): Promise<ServiceResponse<SourceItem[]>> {
       isAvailable: true,
     };
   } catch (err: unknown) {
-    const errorMessage = err instanceof Error ? err.message : 'Sources endpoint not available';
+    const errorMessage = err instanceof Error ? err.message : 'Sources endpoint unavailable (/api/sources)';
     return {
       data: null,
       error: errorMessage,
@@ -84,28 +142,7 @@ export async function getSources(): Promise<ServiceResponse<SourceItem[]>> {
 }
 
 /**
- * 3. Fetch Evaluation Benchmarks (GET /api/evaluate/results)
- */
-export async function getEvaluationResults(): Promise<ServiceResponse<EvaluationResult>> {
-  try {
-    const response = await apiClient.get<EvaluationResult>('/api/evaluate/results');
-    return {
-      data: response.data,
-      error: null,
-      isAvailable: true,
-    };
-  } catch (err: unknown) {
-    const errorMessage = err instanceof Error ? err.message : 'Evaluation results endpoint not available yet';
-    return {
-      data: null,
-      error: errorMessage,
-      isAvailable: false,
-    };
-  }
-}
-
-/**
- * 4. Fetch Recent Query History from Real Backend (GET /api/query)
+ * 5. Fetch Recent Query History from Real Backend Database (GET /api/query)
  */
 export async function getRecentQueries(): Promise<ServiceResponse<QueryRunItem[]>> {
   try {
@@ -141,17 +178,60 @@ export async function getRecentQueries(): Promise<ServiceResponse<QueryRunItem[]
       error: null,
       isAvailable: true,
     };
-  } catch {
+  } catch (err: unknown) {
+    const errorMessage = err instanceof Error ? err.message : 'Query history unavailable (/api/query)';
     return {
       data: [],
-      error: null,
+      error: errorMessage,
       isAvailable: false,
     };
   }
 }
 
 /**
- * 5. Fetch Retrieval Activity Timeseries
+ * 6. Build real Activity timeseries from recorded queries
+ */
+export function buildActivityFromQueries(queries: QueryRunItem[]): RetrievalActivityPoint[] {
+  if (!queries || queries.length === 0) return [];
+
+  // Reverse so oldest first, newest last
+  const chronological = [...queries].reverse();
+
+  return chronological.map((q, idx) => {
+    const match = q.budgetUsed?.match(/(\d+)\s*tokens/);
+    const tokens = match ? parseInt(match[1], 10) : 0;
+    return {
+      time: q.timestamp || `#${idx + 1}`,
+      queries: 1,
+      evidence: q.evidenceCount || 1,
+      budgetTokens: tokens,
+    };
+  });
+}
+
+/**
+ * 7. Fetch Evaluation Benchmarks (GET /api/evaluate/results)
+ */
+export async function getEvaluationResults(): Promise<ServiceResponse<EvaluationResult>> {
+  try {
+    const response = await apiClient.get<EvaluationResult>('/api/evaluate/results');
+    return {
+      data: response.data,
+      error: null,
+      isAvailable: true,
+    };
+  } catch (err: unknown) {
+    const errorMessage = err instanceof Error ? err.message : 'Evaluation results endpoint not available';
+    return {
+      data: null,
+      error: errorMessage,
+      isAvailable: false,
+    };
+  }
+}
+
+/**
+ * 8. Fetch Retrieval Activity Timeseries from Telemetry (if available)
  */
 export async function getRetrievalActivity(): Promise<ServiceResponse<RetrievalActivityPoint[]>> {
   try {

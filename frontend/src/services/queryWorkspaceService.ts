@@ -217,14 +217,7 @@ export async function executeWorkspaceQuery(
       }
     }
 
-    // Fallback answer generation from verified passages if queryData wasn't available
-    if (!finalAnswer && outcome === 'ANSWER' && retrieveData?.retrieved_evidence?.length) {
-      const topPassages = retrieveData.retrieved_evidence.slice(0, 2);
-      const snippets = topPassages.map(
-        (p) => `"${p.content}" [Source: ${p.source_name} (${p.record_id || p.chunk_id})]`
-      );
-      finalAnswer = `Based on verified evidence:\n${snippets.join('\n')}`;
-    }
+    // Preserved actual backend finalAnswer without synthetic generation
 
     const stages = buildPipelineStages(retrieveData, queryData);
 
@@ -329,3 +322,4 @@ export async function getQueryDetails(queryId: string): Promise<ServiceResponse<
     };
   }
 }
+

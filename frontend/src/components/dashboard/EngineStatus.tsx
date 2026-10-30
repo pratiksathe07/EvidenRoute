@@ -27,7 +27,7 @@ export const EngineStatus: React.FC<EngineStatusProps> = ({
   onRefresh,
   lastQueryTime = null,
 }) => {
-  const isHealthy = isConnected && health?.status === 'ok';
+  const isHealthy = isConnected && (health?.status === 'healthy' || health?.status === 'ok');
 
   return (
     <div className="engine-status-card">
