@@ -29,9 +29,12 @@ htmlcov/
 
 # Node / React
 node_modules/
+dist/
+dist-ssr/
 frontend/dist/
 frontend/dist-ssr/
 *.local
+*.tsbuildinfo
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
