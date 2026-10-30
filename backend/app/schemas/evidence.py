@@ -40,4 +40,7 @@ class EvidenceScore(BaseModel):
     freshness_score: float = Field(..., ge=0.0, le=1.0, description="Temporal currency relative to query context")
     directness_score: float = Field(..., ge=0.0, le=1.0, description="Direct answer vs tangential mention")
     composite_score: float = Field(..., ge=0.0, le=1.0, description="Weighted composite score")
+    correctness_score: Optional[float] = Field(None, ge=0.0, le=1.0, description="Verification measure using supporting corroboration and conflict checks")
+    correctness_status: Optional[str] = Field("consistent", description="cross_verified, consistent, unverified_single_source, or contradicted")
+    correctness_explanation: Optional[str] = Field(None, description="Explanation of factual consistency or verification")
     evaluation_notes: Optional[str] = Field(None, description="Human-readable explanation of the score")

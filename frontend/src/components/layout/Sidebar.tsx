@@ -25,9 +25,9 @@ interface SidebarProps {
 const navItems: NavItem[] = [
   { id: 'dashboard', label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
   { id: 'query-workspace', label: 'Query Workspace', path: '/query-workspace', icon: Terminal },
-  { id: 'source-selection', label: 'Source Selection', path: '/source-selection', icon: Database },
-  { id: 'evidence-explorer', label: 'Evidence Explorer', path: '/evidence-explorer', icon: FileSearch },
+  { id: 'resource-ranking', label: 'Resource Ranking', path: '/resource-ranking', icon: Database },
   { id: 'evaluation', label: 'Evaluation', path: '/evaluation', icon: BarChart3 },
+  { id: 'evidence-explorer', label: 'Evidence Explorer', path: '/evidence-explorer', icon: FileSearch },
   { id: 'settings', label: 'Settings', path: '/settings', icon: Settings },
 ];
 

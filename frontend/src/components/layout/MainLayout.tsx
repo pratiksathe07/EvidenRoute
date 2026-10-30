@@ -8,9 +8,10 @@ import './MainLayout.css';
 const PAGE_TITLES: Record<string, string> = {
   '/dashboard': 'Dashboard',
   '/query-workspace': 'Query Workspace',
-  '/source-selection': 'Source Selection',
-  '/evidence-explorer': 'Evidence Explorer',
+  '/resource-ranking': 'Resource Ranking',
+  '/source-selection': 'Resource Ranking',
   '/evaluation': 'Evaluation',
+  '/evidence-explorer': 'Evidence Explorer',
   '/settings': 'Settings',
 };
 

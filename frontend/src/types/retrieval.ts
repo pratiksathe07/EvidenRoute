@@ -17,6 +17,9 @@ export interface EvidenceScore {
   directness_label: 'direct' | 'supporting' | 'indirect' | 'tangential' | string;
   final_evidence_score: number;
   scoring_explanation: string;
+  correctness_score?: number;
+  correctness_status?: string;
+  correctness_explanation?: string;
   weights_applied?: {
     relevance?: number;
     authority?: number;

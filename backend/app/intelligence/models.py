@@ -242,6 +242,9 @@ class EvidenceScore(BaseModel):
     final_evidence_score: float = Field(..., ge=0.0, le=1.0)
     scoring_explanation: str
     weights_applied: Dict[str, float] = Field(default_factory=dict)
+    correctness_score: Optional[float] = Field(None, ge=0.0, le=1.0)
+    correctness_status: Optional[str] = Field("consistent", description="cross_verified, consistent, unverified_single_source, or contradicted")
+    correctness_explanation: Optional[str] = Field(None)
 
 
 class EvidencePassage(BaseModel):

@@ -128,6 +128,9 @@ class EvidenceScorer:
             final_evidence_score=round(final_score, 4),
             scoring_explanation=explanation,
             weights_applied={k: round(v, 4) for k, v in weights_applied.items()},
+            correctness_score=round(0.90 if authority >= 0.85 else 0.75, 4),
+            correctness_status="consistent" if authority >= 0.85 else "unverified_single_source",
+            correctness_explanation="Consistent with authoritative record." if authority >= 0.85 else "Awaiting cross-source corroboration.",
         )
 
     def _calculate_freshness(

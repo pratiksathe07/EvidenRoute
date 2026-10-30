@@ -102,6 +102,54 @@ def register_source(payload: SourceRegistration, db: Session = Depends(get_db)):
     )
 
 
+@router.patch("/{source_id}/toggle", response_model=SourceInfo)
+def toggle_source(source_id: str, db: Session = Depends(get_db)):
+    """
+    Toggles the enabled/active status of a registered source.
+    """
+    src = db.query(SourceModel).filter(SourceModel.source_id == source_id).first()
+    if not src:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Source with ID '{source_id}' not found."
+        )
+
+    src.enabled = not src.enabled
+    src.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(src)
+
+    # Sync with in-memory SourceRegistry if available
+    try:
+        from backend.app.intelligence.source_registry import SourceRegistry
+        for s in SourceRegistry.list_sources():
+            if s.source_id == source_id:
+                s.availability = src.enabled
+    except Exception:
+        pass
+
+    count = db.query(RecordModel).filter(RecordModel.source_id == src.source_id).count()
+    metadata = {}
+    if src.metadata_json:
+        try:
+            metadata = json.loads(src.metadata_json)
+        except Exception:
+            pass
+
+    return SourceInfo(
+        source_id=src.source_id,
+        name=src.name,
+        source_type=SourceType(src.source_type) if src.source_type in [e.value for e in SourceType] else SourceType.DOCUMENT,
+        description=src.description,
+        default_authority=src.default_authority,
+        enabled=src.enabled,
+        record_count=count,
+        last_ingested_at=src.updated_at,
+        status="healthy" if src.enabled else "disabled",
+        metadata=metadata,
+    )
+
+
 @router.post("/ingest", status_code=status.HTTP_200_OK)
 def ingest_records(payload: IngestBatchRequest, db: Session = Depends(get_db)):
     """

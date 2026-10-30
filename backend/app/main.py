@@ -13,10 +13,12 @@ from fastapi.middleware.cors import CORSMiddleware
 try:
     from backend.app.api.sources import router as sources_router, seed_sources_and_records
     from backend.app.api.query import router as query_router
+    from backend.app.api.settings_routes import router as settings_router
     from backend.app.database.db import SessionLocal, init_db
 except ImportError:
     from app.api.sources import router as sources_router, seed_sources_and_records
     from app.api.query import router as query_router
+    from app.api.settings_routes import router as settings_router
     from app.database.db import SessionLocal, init_db
 
 # Member 2 Intelligence Engine Router & Core Configuration
@@ -72,6 +74,7 @@ app.add_middleware(
 # Register Member 1 Core API Routers
 app.include_router(sources_router)
 app.include_router(query_router)
+app.include_router(settings_router)
 
 # Register Member 2 Intelligence API Routers
 app.include_router(intelligence_router, prefix=settings.API_V1_STR, tags=["Intelligence"])

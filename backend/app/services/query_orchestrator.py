@@ -225,6 +225,28 @@ class QueryOrchestrator:
             answer_snippets = [f"\"{e.content}\" [Source: {e.title} ({e.evidence_id})]" for e in top_evidence]
             final_answer = "Based on verified evidence:\n" + "\n".join(answer_snippets)
 
+            # If Gemini is configured and enabled, synthesize grounded fluent answer
+            try:
+                from backend.app.core.config import settings
+                if settings.GEMINI_API_KEY and settings.LLM_PROVIDER != "none":
+                    import google.generativeai as genai
+                    genai.configure(api_key=settings.GEMINI_API_KEY)
+                    model = genai.GenerativeModel("gemini-1.5-flash")
+                    grounding_context = "\n".join(f"- [{e.title}]: {e.content}" for e in top_evidence)
+                    prompt = (
+                        f"You are EvidenRoute, an explainable context-grounded AI assistant.\n"
+                        f"Answer the user question using ONLY the following verified evidence passages.\n"
+                        f"Cite sources with their titles in brackets like [Source Title].\n"
+                        f"Question: {request.question}\n\n"
+                        f"Evidence:\n{grounding_context}\n\n"
+                        f"Answer:"
+                    )
+                    resp = model.generate_content(prompt)
+                    if resp and resp.text and resp.text.strip():
+                        final_answer = resp.text.strip()
+            except Exception:
+                pass  # Gracefully fall back to deterministic verified snippets
+
         # -------------------------------------------------------------
         # Step 7: Evidence Stress Test (Key Differentiator)
         # -------------------------------------------------------------

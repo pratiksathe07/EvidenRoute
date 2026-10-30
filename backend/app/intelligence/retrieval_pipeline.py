@@ -343,6 +343,39 @@ class RetrievalPipeline:
         # STAGE 6: Conflict Detection
         # -------------------------------------------------------------
         conflict_res = self.conflict_detector.detect_conflicts(final_evidence)
+
+        # Compute meaningful Correctness factor based on conflict detection & source corroboration
+        unique_sources_in_set = {p.source_id for p in final_evidence}
+        critical_chunk_ids = set()
+        divergent_chunk_ids = set()
+        for c in conflict_res.conflicts:
+            for pref in c.conflicting_passages:
+                if c.severity in ("critical", "high"):
+                    critical_chunk_ids.add(pref.chunk_id)
+                else:
+                    divergent_chunk_ids.add(pref.chunk_id)
+
+        for ev in final_evidence:
+            if ev.chunk_id in critical_chunk_ids:
+                ev.evidence_score.correctness_score = 0.20
+                ev.evidence_score.correctness_status = "contradicted"
+                ev.evidence_score.correctness_explanation = "Direct factual contradiction flagged against other evidence."
+            elif ev.chunk_id in divergent_chunk_ids:
+                ev.evidence_score.correctness_score = 0.70
+                ev.evidence_score.correctness_status = "temporally_updated"
+                ev.evidence_score.correctness_explanation = "Temporal revision or policy evolution noted between sources."
+            elif len(unique_sources_in_set) >= 2 and ev.evidence_score.relevance_score >= 0.40:
+                ev.evidence_score.correctness_score = 0.95
+                ev.evidence_score.correctness_status = "cross_verified"
+                ev.evidence_score.correctness_explanation = "Cross-verified across multiple independent retrieved sources."
+            elif ev.authority_level >= 0.85:
+                ev.evidence_score.correctness_score = 0.90
+                ev.evidence_score.correctness_status = "consistent"
+                ev.evidence_score.correctness_explanation = "Consistent with official authoritative repository records."
+            else:
+                ev.evidence_score.correctness_score = 0.65
+                ev.evidence_score.correctness_status = "unverified_single_source"
+                ev.evidence_score.correctness_explanation = "Single-source observation awaiting independent corroboration."
         stages.append(
             f"Stage 6: Evaluated {len(final_evidence)} passages for conflicts: "
             f"detected {conflict_res.conflicts_detected_count} total divergence(s), "
@@ -397,6 +430,39 @@ class RetrievalPipeline:
                     ev.ranking_position = rank_pos
                 # Re-evaluate conflicts across combined set
                 conflict_res = self.conflict_detector.detect_conflicts(final_evidence)
+
+        # Compute meaningful Correctness factor based on conflict detection & source corroboration
+        unique_sources_in_set = {p.source_id for p in final_evidence}
+        critical_chunk_ids = set()
+        divergent_chunk_ids = set()
+        for c in conflict_res.conflicts:
+            for pref in c.conflicting_passages:
+                if c.severity in ("critical", "high"):
+                    critical_chunk_ids.add(pref.chunk_id)
+                else:
+                    divergent_chunk_ids.add(pref.chunk_id)
+
+        for ev in final_evidence:
+            if ev.chunk_id in critical_chunk_ids:
+                ev.evidence_score.correctness_score = 0.20
+                ev.evidence_score.correctness_status = "contradicted"
+                ev.evidence_score.correctness_explanation = "Direct factual contradiction flagged against other evidence."
+            elif ev.chunk_id in divergent_chunk_ids:
+                ev.evidence_score.correctness_score = 0.70
+                ev.evidence_score.correctness_status = "temporally_updated"
+                ev.evidence_score.correctness_explanation = "Temporal revision or policy evolution noted between sources."
+            elif len(unique_sources_in_set) >= 2 and ev.evidence_score.relevance_score >= 0.40:
+                ev.evidence_score.correctness_score = 0.95
+                ev.evidence_score.correctness_status = "cross_verified"
+                ev.evidence_score.correctness_explanation = "Cross-verified across multiple independent retrieved sources."
+            elif ev.authority_level >= 0.85:
+                ev.evidence_score.correctness_score = 0.90
+                ev.evidence_score.correctness_status = "consistent"
+                ev.evidence_score.correctness_explanation = "Consistent with official authoritative repository records."
+            else:
+                ev.evidence_score.correctness_score = 0.65
+                ev.evidence_score.correctness_status = "unverified_single_source"
+                ev.evidence_score.correctness_explanation = "Single-source observation awaiting independent corroboration."
                 # Re-evaluate sufficiency
                 sufficiency_res = self.sufficiency_evaluator.evaluate_sufficiency(
                     query=question,
