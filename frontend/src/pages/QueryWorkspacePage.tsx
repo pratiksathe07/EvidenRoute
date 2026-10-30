@@ -1,309 +1,281 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  Terminal,
-  CheckCircle2,
+  RotateCw,
   AlertCircle,
-  Activity,
-  ShieldAlert,
-  Sparkles,
+  X,
+  FileSearch,
 } from 'lucide-react';
-import { WorkspaceQueryInput } from '../components/query-workspace/WorkspaceQueryInput';
-import { ExecutionSummaryBar } from '../components/query-workspace/ExecutionSummaryBar';
-import { PipelineStageTracker } from '../components/query-workspace/PipelineStageTracker';
-import { AnswerWorkspacePanel } from '../components/query-workspace/AnswerWorkspacePanel';
-import { EvidenceExplorerPanel } from '../components/query-workspace/EvidenceExplorerPanel';
-import { ConflictSufficiencyPanel } from '../components/query-workspace/ConflictSufficiencyPanel';
-import { QueryHistorySidebar } from '../components/query-workspace/QueryHistorySidebar';
-import {
-  executeWorkspaceQuery,
-  getQueryHistory,
-} from '../services/queryWorkspaceService';
-import { getSystemHealth } from '../services/dashboardService';
-import {
-  WorkspaceExecutionResult,
-  QueryHistoryRecord,
-} from '../types/queryWorkspace';
+import { RetrieveResponse, RetrievalHealthResponse } from '../types/retrieval';
+import { SourceMetadata } from '../types/sourceSelection';
+import { retrieveEvidence, getRetrievalHealth } from '../services/retrievalService';
+import { getAvailableSources } from '../services/sourceSelectionService';
+
+import { QueryInputPanel } from '../components/query-workspace/QueryInputPanel';
+import { QuerySummary } from '../components/query-workspace/QuerySummary';
+import { SourceResultsPanel } from '../components/query-workspace/SourceResultsPanel';
+import { EvidenceList } from '../components/query-workspace/EvidenceList';
+import { DecisionTracePanel } from '../components/query-workspace/DecisionTracePanel';
+import { InsufficientEvidenceNotice } from '../components/query-workspace/InsufficientEvidenceNotice';
+import { ConflictInspector } from '../components/query-workspace/ConflictInspector';
+
 import './QueryWorkspacePage.css';
 
-type ActiveTab = 'answer' | 'conflicts' | 'trace';
+const DEFAULT_QUERY = 'Why did the payment API fail after deployment?';
 
 export const QueryWorkspacePage: React.FC = () => {
-  // Query & Execution State
-  const [query, setQuery] = useState<string>('');
+  // Query state
+  const [query, setQuery] = useState<string>(DEFAULT_QUERY);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [validationError, setValidationError] = useState<string | null>(null);
-  const [backendError, setBackendError] = useState<string | null>(null);
-  const [executionResult, setExecutionResult] = useState<WorkspaceExecutionResult | null>(null);
+  const [apiError, setApiError] = useState<string | null>(null);
 
-  // Active view tab
-  const [activeTab, setActiveTab] = useState<ActiveTab>('answer');
+  // Response state
+  const [retrievalResult, setRetrievalResult] = useState<RetrieveResponse | null>(null);
+  const [lastExecutedQuery, setLastExecutedQuery] = useState<string | null>(null);
 
-  // History State
-  const [history, setHistory] = useState<QueryHistoryRecord[]>([]);
-  const [isLoadingHistory, setIsLoadingHistory] = useState<boolean>(false);
+  // Auxiliary backend state
+  const [availableSources, setAvailableSources] = useState<SourceMetadata[]>([]);
+  const [healthStatus, setHealthStatus] = useState<RetrievalHealthResponse | null>(null);
+  const [isBackendHealthy, setIsBackendHealthy] = useState<boolean>(true);
 
-  // Engine Connection Probe
-  const [isEngineConnected, setIsEngineConnected] = useState<boolean>(false);
+  // Prevent duplicate concurrent submissions
+  const isExecutingRef = useRef<boolean>(false);
 
-  // 1. Probe health on mount
-  const checkHealth = useCallback(async () => {
-    const healthRes = await getSystemHealth();
-    setIsEngineConnected(
-      healthRes.isAvailable &&
-        (healthRes.data?.status === 'healthy' || healthRes.data?.status === 'ok')
-    );
-  }, []);
+  // Initial load: Fetch sources metadata and probe retrieval subsystem health
+  const loadDiagnostics = useCallback(async () => {
+    try {
+      const [sourcesRes, healthRes] = await Promise.all([
+        getAvailableSources(),
+        getRetrievalHealth(),
+      ]);
 
-  // 2. Load query history from GET /api/query
-  const loadHistory = useCallback(async () => {
-    setIsLoadingHistory(true);
-    const histRes = await getQueryHistory(20);
-    if (histRes.isAvailable && histRes.data) {
-      setHistory(histRes.data);
+      if (sourcesRes.data) {
+        setAvailableSources(sourcesRes.data);
+      }
+
+      if (healthRes.data) {
+        setHealthStatus(healthRes.data);
+        setIsBackendHealthy(healthRes.data.status === 'healthy' || healthRes.isAvailable);
+      } else {
+        setIsBackendHealthy(sourcesRes.isAvailable);
+      }
+    } catch {
+      setIsBackendHealthy(false);
     }
-    setIsLoadingHistory(false);
   }, []);
 
   useEffect(() => {
-    checkHealth();
-    loadHistory();
-  }, [checkHealth, loadHistory]);
+    loadDiagnostics();
+  }, [loadDiagnostics]);
 
-  // 3. Handle Query Execution
-  const handleRunQuery = async (questionToRun: string) => {
-    const trimmed = questionToRun.trim();
+  // Main submission handler
+  const handleRunQuery = async () => {
+    const trimmed = query.trim();
+
     if (!trimmed) {
-      setValidationError('Please enter a natural-language question to query the intelligence engine.');
+      setValidationError('Please enter a query or question before executing retrieval.');
+      return;
+    }
+
+    if (isExecutingRef.current) {
       return;
     }
 
     setValidationError(null);
-    setBackendError(null);
+    setApiError(null);
     setIsLoading(true);
+    isExecutingRef.current = true;
 
-    const result = await executeWorkspaceQuery(trimmed, 5, true);
+    try {
+      const response = await retrieveEvidence({
+        question: trimmed,
+        top_k: 10,
+        selection_config: null,
+        retrieval_config: null,
+      });
 
-    if (result.isAvailable && result.data) {
-      setExecutionResult(result.data);
-      // Auto-switch to answer tab on new execution
-      setActiveTab('answer');
-      // Refresh persistent history in background
-      loadHistory();
-    } else {
-      setBackendError(
-        result.error ||
-          'Failed to execute query workspace pipeline. Ensure backend is running on port 8000.'
-      );
+      if (response.data) {
+        // Success: replace previous result
+        setRetrievalResult(response.data);
+        setLastExecutedQuery(trimmed);
+        setApiError(null);
+      } else {
+        // Failure: preserve previous result, show error clearly
+        setApiError(
+          response.error ||
+            'The retrieval engine failed to process your inquiry. Please ensure the backend is active.'
+        );
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'An unexpected network error occurred.';
+      setApiError(msg);
+    } finally {
+      setIsLoading(false);
+      isExecutingRef.current = false;
     }
-
-    setIsLoading(false);
   };
 
-  // 4. Handle Clear Action
-  const handleClear = () => {
+  const handleClearQuery = () => {
     setQuery('');
     setValidationError(null);
-    setBackendError(null);
-    setExecutionResult(null);
   };
 
-  // 5. Handle Query Selection from History
-  const handleSelectHistoryQuery = (selectedQuestion: string) => {
-    setQuery(selectedQuestion);
-    handleRunQuery(selectedQuestion);
+  const handleSelectExample = (example: string) => {
+    setQuery(example);
+    setValidationError(null);
   };
 
   return (
-    <div className="query-workspace-page">
-      {/* ====================================================================
-          A. Page Header
-          ==================================================================== */}
-      <section className="workspace-header-section">
-        <div className="header-info-wrap">
-          <div className="header-title-line">
-            <h2 className="workspace-page-title">Query Workspace</h2>
-            <div className="workspace-pipeline-badge">
-              <Terminal size={13} />
-              <span>Full Intelligence Pipeline</span>
-            </div>
+    <div className="qw-page-container">
+      {/* 1. Page Header */}
+      <header className="qw-page-header">
+        <div className="qw-page-title-group">
+          <div className="qw-badge-row">
+            <span className="qw-step-badge">Step 4 Engine</span>
+            <span className={`qw-status-pill ${isBackendHealthy ? 'online' : 'offline'}`}>
+              <span className={`status-indicator-dot ${isBackendHealthy ? 'pulse' : ''}`} />
+              <span>
+                {isBackendHealthy
+                  ? healthStatus?.bm25_status === 'ready'
+                    ? 'Retrieval Subsystem Online (BM25 Ready)'
+                    : 'Backend Online'
+                  : 'Backend Offline'}
+              </span>
+            </span>
           </div>
-          <p className="workspace-page-subtitle">
-            Execute bounded hybrid retrieval, multi-dimensional evidence evaluation, conflict detection, and grounded synthesis.
+
+          <h1 className="qw-page-title">Query Workspace & Evidence Retrieval</h1>
+          <p className="qw-page-subtitle">
+            Enter a natural-language question to orchestrate context sources, retrieve grounded evidence
+            passages, and inspect explainable 4D scoring traces.
           </p>
         </div>
 
-        {/* Dynamic Engine Probed Status */}
-        <div
-          className={`workspace-status-chip ${
-            isEngineConnected ? 'status-online' : 'status-standby'
-          }`}
-          title={
-            isEngineConnected
-              ? 'Backend intelligence orchestrator online at http://127.0.0.1:8000'
-              : 'Backend unreachable. Running in client standby mode'
-          }
-        >
-          <span className={`status-dot ${isEngineConnected ? 'dot-online' : 'dot-standby'}`} />
-          {isEngineConnected ? (
-            <>
-              <CheckCircle2 size={13} />
-              <span>Pipeline Engine Online</span>
-            </>
-          ) : (
-            <>
-              <AlertCircle size={13} />
-              <span>Engine Standby (Port 8000)</span>
-            </>
-          )}
+        <div className="qw-header-actions">
+          <button
+            type="button"
+            className="qw-reload-btn"
+            onClick={loadDiagnostics}
+            title="Refresh backend subsystem diagnostics"
+          >
+            <RotateCw size={14} />
+            <span>Sync Engine</span>
+          </button>
         </div>
-      </section>
+      </header>
 
-      {/* ====================================================================
-          B. Main Layout: Workspace Stream + History Drawer
-          ==================================================================== */}
-      <div className="workspace-main-layout">
-        <div className="workspace-center-column">
-          {/* Query Input Box */}
-          <section className="workspace-input-section">
-            <WorkspaceQueryInput
-              query={query}
-              setQuery={(q) => {
-                setQuery(q);
-                if (validationError) setValidationError(null);
-              }}
-              onSubmit={handleRunQuery}
-              onClear={handleClear}
-              isLoading={isLoading}
-              validationError={validationError}
-              backendError={backendError}
-            />
-          </section>
-
-          {/* Execution Summary Bar (Appears when execution data exists) */}
-          {executionResult && (
-            <section className="workspace-summary-section">
-              <ExecutionSummaryBar execution={executionResult} />
-            </section>
-          )}
-
-          {/* Results Navigation Tabs (Appears when execution data exists) */}
-          {executionResult && (
-            <section className="workspace-tabs-section">
-              <div className="workspace-tabs-bar">
-                <button
-                  type="button"
-                  className={`workspace-tab-btn ${activeTab === 'answer' ? 'tab-active' : ''}`}
-                  onClick={() => setActiveTab('answer')}
-                >
-                  <Sparkles size={14} />
-                  <span>Answer & Supporting Evidence</span>
-                  <span className="tab-count-tag">
-                    {executionResult.retrievedEvidence.length}
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  className={`workspace-tab-btn ${activeTab === 'conflicts' ? 'tab-active' : ''}`}
-                  onClick={() => setActiveTab('conflicts')}
-                >
-                  <ShieldAlert size={14} />
-                  <span>Conflicts & Sufficiency</span>
-                  {executionResult.conflicts.length > 0 && (
-                    <span className="tab-count-tag count-alert">
-                      {executionResult.conflicts.length}
-                    </span>
-                  )}
-                </button>
-
-                <button
-                  type="button"
-                  className={`workspace-tab-btn ${activeTab === 'trace' ? 'tab-active' : ''}`}
-                  onClick={() => setActiveTab('trace')}
-                >
-                  <Activity size={14} />
-                  <span>Execution Pipeline Trace</span>
-                  <span className="tab-count-tag">9 Stages</span>
-                </button>
-              </div>
-
-              {/* Tab Contents */}
-              <div className="workspace-tab-viewport">
-                {activeTab === 'answer' && (
-                  <div className="tab-panel-answer-view">
-                    <AnswerWorkspacePanel execution={executionResult} />
-                    <EvidenceExplorerPanel
-                      evidenceList={executionResult.retrievedEvidence}
-                    />
-                  </div>
-                )}
-
-                {activeTab === 'conflicts' && (
-                  <div className="tab-panel-conflicts-view">
-                    <ConflictSufficiencyPanel
-                      conflicts={executionResult.conflicts}
-                      sufficiency={executionResult.sufficiency}
-                      counterEvidence={executionResult.counterEvidence}
-                      evidenceReliability={executionResult.evidenceReliability}
-                    />
-                  </div>
-                )}
-
-                {activeTab === 'trace' && (
-                  <div className="tab-panel-trace-view">
-                    <PipelineStageTracker
-                      stages={executionResult.stages}
-                      isLoading={isLoading}
-                    />
-                  </div>
-                )}
-              </div>
-            </section>
-          )}
-
-          {/* Empty State before any query is run */}
-          {!executionResult && !isLoading && (
-            <section className="workspace-empty-hero">
-              <div className="hero-icon-container">
-                <Terminal size={32} />
-              </div>
-              <h3>Ready to Orchestrate Context</h3>
-              <p>
-                Enter a question above or choose a verified scenario to trigger the 9-stage intelligence pipeline: query analysis, source selection, budget enforcement, bounded retrieval, 4D scoring, conflict detection, and context pruning.
-              </p>
-              <div className="hero-features-list">
-                <span className="hero-feature-item">
-                  <CheckCircle2 size={13} />
-                  Multi-Factor 4D Scoring
-                </span>
-                <span className="hero-feature-item">
-                  <CheckCircle2 size={13} />
-                  Contradiction Resolution
-                </span>
-                <span className="hero-feature-item">
-                  <CheckCircle2 size={13} />
-                  Budget Quota Protection
-                </span>
-                <span className="hero-feature-item">
-                  <CheckCircle2 size={13} />
-                  Persisted Database History
-                </span>
-              </div>
-            </section>
-          )}
+      {/* 2. Top API Error Banner (if error occurred, preserves previous result below) */}
+      {apiError && (
+        <div className="qw-alert-banner" role="alert">
+          <div className="qw-alert-icon">
+            <AlertCircle size={20} />
+          </div>
+          <div className="qw-alert-content">
+            <div className="qw-alert-title">Retrieval Query Failed</div>
+            <div className="qw-alert-desc">{apiError}</div>
+          </div>
+          <button
+            type="button"
+            className="qw-alert-dismiss"
+            onClick={() => setApiError(null)}
+            aria-label="Dismiss error"
+          >
+            <X size={16} />
+          </button>
         </div>
+      )}
 
-        {/* Right Sidebar: Query History */}
-        <aside className="workspace-history-column">
-          <QueryHistorySidebar
-            history={history}
-            isLoading={isLoadingHistory}
-            onSelectQuery={handleSelectHistoryQuery}
-            onRefresh={loadHistory}
-            activeQuestion={executionResult?.question || query}
+      {/* 3. Query Input Section */}
+      <QueryInputPanel
+        query={query}
+        setQuery={setQuery}
+        onSubmit={handleRunQuery}
+        onClear={handleClearQuery}
+        isLoading={isLoading}
+        validationError={validationError}
+        apiError={apiError}
+      />
+
+      {/* 4. Query Execution Results or Initial Empty State */}
+      {retrievalResult ? (
+        <main className="qw-results-container" aria-label="Query Retrieval Results">
+          {/* Section F: Insufficient Evidence or Abstention Notice */}
+          <InsufficientEvidenceNotice
+            readiness={retrievalResult.answer_readiness}
+            sufficiency={retrievalResult.sufficiency}
           />
-        </aside>
-      </div>
+
+          {/* Section F: Detected Contradictions & Divergences */}
+          {retrievalResult.conflicts && retrievalResult.conflicts.length > 0 && (
+            <ConflictInspector conflicts={retrievalResult.conflicts} />
+          )}
+
+          {/* 2-Column Grid: Section B (Query Summary) & Section C (Source Routing) */}
+          <div className="qw-two-col-grid">
+            {/* Section B: Query Execution Summary */}
+            <QuerySummary response={retrievalResult} />
+
+            {/* Section C: Selected and Skipped Sources */}
+            <SourceResultsPanel
+              selectedSources={retrievalResult.selected_sources}
+              skippedSources={retrievalResult.skipped_sources}
+              allAvailableSources={availableSources}
+            />
+          </div>
+
+          {/* Section D: Retrieved Evidence Panel */}
+          <EvidenceList
+            evidence={retrievalResult.retrieved_evidence || []}
+            hasExecuted={Boolean(lastExecutedQuery)}
+            isLoading={isLoading}
+          />
+
+          {/* Section E: Decision Trace Panel */}
+          {retrievalResult.decision_trace && (
+            <DecisionTracePanel trace={retrievalResult.decision_trace} />
+          )}
+        </main>
+      ) : (
+        /* Initial Empty State before first run */
+        <div className="qw-initial-empty">
+          <div className="qw-empty-icon-wrap" aria-hidden="true">
+            <FileSearch size={32} />
+          </div>
+          <h3 className="qw-empty-title">Ready for Inquiry Orchestration</h3>
+          <p className="qw-empty-desc">
+            Submit a question above to execute real-time intent classification, pre-retrieval routing across
+            enterprise sources, bounded candidate retrieval, and 4D evidence evaluation.
+          </p>
+          <div className="qw-empty-suggestions">
+            <span className="qw-empty-suggestions-label">Try an example inquiry:</span>
+            <div className="qw-suggest-chips">
+              <button
+                type="button"
+                className="qw-suggest-chip"
+                onClick={() => handleSelectExample('Why did the payment API fail after deployment?')}
+              >
+                Why did the payment API fail after deployment?
+              </button>
+              <button
+                type="button"
+                className="qw-suggest-chip"
+                onClick={() => handleSelectExample('What is the database connection timeout limit?')}
+              >
+                What is the database connection timeout limit?
+              </button>
+              <button
+                type="button"
+                className="qw-suggest-chip"
+                onClick={() =>
+                  handleSelectExample('How do quantum teleportation warp drives operate on Mars?')
+                }
+              >
+                Quantum warp drives on Mars (Test Abstention)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
