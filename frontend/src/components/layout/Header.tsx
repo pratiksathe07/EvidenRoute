@@ -1,5 +1,5 @@
 import React from 'react';
-import { Search, Activity, Menu, Bell, User } from 'lucide-react';
+import { Search, Activity, Menu, Bell } from 'lucide-react';
 import './Header.css';
 
 interface HeaderProps {
@@ -40,7 +40,7 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* Right Section: System Status & Profile */}
+      {/* Right Section: System Status & Notifications */}
       <div className="header-right">
         {/* System Status Indicator */}
         <div className="system-status-badge standby" title="Engine client mode initialized. Awaiting backend connection.">
@@ -59,17 +59,6 @@ export const Header: React.FC<HeaderProps> = ({
           <Bell size={18} />
           <span className="notification-dot" />
         </button>
-
-        {/* User Profile Placeholder */}
-        <div className="user-profile-badge">
-          <div className="user-avatar">
-            <User size={16} />
-          </div>
-          <div className="user-info">
-            <span className="user-name">Member 3</span>
-            <span className="user-role">Frontend Dev</span>
-          </div>
-        </div>
       </div>
     </header>
   );
