@@ -109,7 +109,6 @@ export const SettingsPage: React.FC = () => {
   const handleToggleSource = async (sourceId: string) => {
     const res = await toggleSourceAvailability(sourceId);
     if (res.isAvailable) {
-      // Refresh sources list
       const updated = await getAvailableSources();
       if (updated.data) {
         setSources(updated.data);
@@ -130,7 +129,7 @@ export const SettingsPage: React.FC = () => {
           </div>
           <h1 className="set-title">Settings</h1>
           <p className="set-subtitle">
-            Configure application preferences, AI model routing, resource availability, and secure external integrations.
+            Configure application preferences, AI model routing, resource availability, and external service adapters.
           </p>
         </div>
       </header>
@@ -139,7 +138,7 @@ export const SettingsPage: React.FC = () => {
       <section className="set-section">
         <div className="set-section-header">
           <div className="set-section-title-wrap">
-            <Sparkles size={18} className="text-blue" />
+            <Sparkles size={16} className="text-blue" />
             <h2 className="set-section-title">AI Provider Settings</h2>
           </div>
           <span className="set-section-desc">Google Gemini Answer Generation</span>
@@ -183,12 +182,12 @@ export const SettingsPage: React.FC = () => {
                   onClick={() => setShowApiKey(!showApiKey)}
                   title={showApiKey ? 'Hide' : 'Show'}
                 >
-                  {showApiKey ? <EyeOff size={15} /> : <Eye size={15} />}
+                  {showApiKey ? <EyeOff size={14} /> : <Eye size={14} />}
                 </button>
               </div>
               <span className="set-hint">
                 <ShieldCheck size={12} className="text-emerald" />
-                <span>Keys are stored in memory only and never echoed in API responses or logs.</span>
+                <span>Keys are stored in memory and never echoed in API responses.</span>
               </span>
             </div>
 
@@ -232,7 +231,7 @@ export const SettingsPage: React.FC = () => {
                 onClick={handleTestGemini}
                 disabled={isTesting}
               >
-                <RefreshCw size={14} className={isTesting ? 'spin' : ''} />
+                <RefreshCw size={13} className={isTesting ? 'spin' : ''} />
                 <span>{isTesting ? 'Testing Connection...' : 'Test Connection'}</span>
               </button>
 
@@ -242,14 +241,14 @@ export const SettingsPage: React.FC = () => {
                 onClick={handleSaveGemini}
                 disabled={isSaving}
               >
-                <Check size={14} />
+                <Check size={13} />
                 <span>{isSaving ? 'Saving...' : 'Save AI Settings'}</span>
               </button>
             </div>
 
             {saveSuccessMsg && (
               <span className="set-success-msg">
-                <CheckCircle2 size={14} />
+                <CheckCircle2 size={13} />
                 <span>{saveSuccessMsg}</span>
               </span>
             )}
@@ -258,7 +257,7 @@ export const SettingsPage: React.FC = () => {
           {/* Connection Test Output */}
           {testResult && (
             <div className={`set-test-banner ${testResult.success ? 'success' : 'failed'}`}>
-              {testResult.success ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
+              {testResult.success ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
               <span>{testResult.message}</span>
             </div>
           )}
@@ -269,7 +268,7 @@ export const SettingsPage: React.FC = () => {
       <section className="set-section">
         <div className="set-section-header">
           <div className="set-section-title-wrap">
-            <Database size={18} className="text-emerald" />
+            <Database size={16} className="text-emerald" />
             <h2 className="set-section-title">Resource Settings</h2>
           </div>
           <span className="set-section-desc">Manage Grounding Knowledge Sources</span>
@@ -310,11 +309,11 @@ export const SettingsPage: React.FC = () => {
         </div>
       </section>
 
-      {/* 4. General Settings */}
+      {/* 4. General Preferences */}
       <section className="set-section">
         <div className="set-section-header">
           <div className="set-section-title-wrap">
-            <Sliders size={18} className="text-orange" />
+            <Sliders size={16} className="text-orange" />
             <h2 className="set-section-title">General Preferences</h2>
           </div>
           <span className="set-section-desc">Response Behavior & Appearance</span>
@@ -364,11 +363,11 @@ export const SettingsPage: React.FC = () => {
         </div>
       </section>
 
-      {/* 5. Integrations & Connectors */}
+      {/* 5. External Integrations & Adapters */}
       <section className="set-section">
         <div className="set-section-header">
           <div className="set-section-title-wrap">
-            <Plug size={18} className="text-purple" />
+            <Plug size={16} className="text-purple" />
             <h2 className="set-section-title">External Integrations & Adapters</h2>
           </div>
           <span className="set-section-desc">Supported Service Adapters</span>

@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   Send,
-  Sparkles,
   AlertTriangle,
   RotateCcw,
   ChevronDown,
@@ -11,6 +10,7 @@ import {
   Bot,
   Info,
   CheckCircle2,
+  Sparkles,
 } from 'lucide-react';
 import {
   sendChatMessage,
@@ -102,56 +102,46 @@ export const QueryWorkspacePage: React.FC = () => {
 
   return (
     <div className="qw-chatbot-container">
-      {/* 1. Header Bar */}
-      <header className="qw-header">
-        <div className="qw-header-title-wrap">
-          <div className="qw-bot-avatar">
-            <Sparkles size={20} className="sparkle-pulse" />
-          </div>
-          <div>
-            <h1 className="qw-title">Query Workspace</h1>
-            <p className="qw-subtitle">
-              Ask any question to receive verified answers grounded in official documentation, tickets, and team records.
-            </p>
-          </div>
-        </div>
-
-        {messages.length > 0 && (
+      {/* Top action bar (only shown during active conversation to reset) */}
+      {messages.length > 0 && (
+        <div className="qw-top-bar">
           <button
             type="button"
             className="qw-reset-btn"
             onClick={handleClearChat}
             title="Start new conversation"
           >
-            <RotateCcw size={14} />
+            <RotateCcw size={13} />
             <span>New Chat</span>
           </button>
-        )}
-      </header>
+        </div>
+      )}
 
-      {/* 2. Messages Conversation Thread */}
+      {/* Messages Conversation Thread */}
       <div className="qw-chat-thread">
         {messages.length === 0 ? (
-          <div className="qw-welcome-card">
-            <div className="qw-welcome-icon">
-              <Bot size={36} />
+          <div className="qw-empty-state">
+            <div className="qw-empty-icon-wrap">
+              <Bot size={28} />
             </div>
-            <h2 className="qw-welcome-heading">How can EvidenRoute help you today?</h2>
-            <p className="qw-welcome-sub">
-              Ask a question to see how EvidenRoute selects only relevant resources, verifies facts, and delivers explainable citations.
+            <h2 className="qw-empty-title">How can EvidenRoute help you verify today?</h2>
+            <p className="qw-empty-subtitle">
+              Ask a question to intelligently select resources, evaluate evidence, and receive explainable answers.
             </p>
 
-            <div className="qw-suggested-box">
-              <span className="qw-suggested-label">Suggested Questions:</span>
-              <div className="qw-suggested-grid">
+            {/* Suggested questions displayed only when no active conversation */}
+            <div className="qw-suggestions-container">
+              <span className="qw-suggestions-label">Suggested Questions</span>
+              <div className="qw-suggestions-grid">
                 {SUGGESTED_QUESTIONS.map((suggestion, idx) => (
                   <button
                     key={idx}
                     type="button"
-                    className="qw-suggested-chip"
+                    className="qw-suggestion-card"
                     onClick={() => handleSend(suggestion)}
                   >
-                    <span>{suggestion}</span>
+                    <Sparkles size={14} className="qw-suggestion-icon" />
+                    <span className="qw-suggestion-text">{suggestion}</span>
                   </button>
                 ))}
               </div>
@@ -164,13 +154,13 @@ export const QueryWorkspacePage: React.FC = () => {
               className={`qw-message-row ${msg.sender === 'user' ? 'user-row' : 'bot-row'}`}
             >
               <div className={`qw-avatar ${msg.sender}`}>
-                {msg.sender === 'user' ? <User size={16} /> : <Bot size={16} />}
+                {msg.sender === 'user' ? <User size={15} /> : <Bot size={15} />}
               </div>
 
               <div className="qw-message-content">
                 <div className="qw-message-header">
                   <span className="qw-sender-name">
-                    {msg.sender === 'user' ? 'You' : 'EvidenRoute Assistant'}
+                    {msg.sender === 'user' ? 'You' : 'EvidenRoute'}
                   </span>
                   <span className="qw-timestamp">{msg.timestamp}</span>
                 </div>
@@ -178,7 +168,7 @@ export const QueryWorkspacePage: React.FC = () => {
                 {/* Insufficient Evidence Warning Banner */}
                 {msg.isInsufficient && (
                   <div className="qw-insufficient-banner">
-                    <AlertTriangle size={16} className="text-warning" />
+                    <AlertTriangle size={15} className="text-warning" />
                     <div>
                       <div className="qw-insufficient-title">Unable to provide a reliable answer</div>
                       <div className="qw-insufficient-desc">
@@ -188,7 +178,7 @@ export const QueryWorkspacePage: React.FC = () => {
                   </div>
                 )}
 
-                {/* Assistant Message Body */}
+                {/* Assistant / User Message Body */}
                 <div className="qw-message-bubble">
                   <div className="qw-message-text">{msg.text}</div>
 
@@ -202,7 +192,7 @@ export const QueryWorkspacePage: React.FC = () => {
                         </div>
                       )}
 
-                      {/* Interactive Supporting Citations */}
+                      {/* Supporting Citations */}
                       {msg.citations && msg.citations.length > 0 && (
                         <div className="qw-citations-row">
                           <span className="qw-citations-label">Sources Cited:</span>
@@ -232,7 +222,7 @@ export const QueryWorkspacePage: React.FC = () => {
                                 ? 'Hide Supporting Evidence'
                                 : `View ${msg.evidenceItems.length} Supporting Evidence Passages`}
                             </span>
-                            {expandedEvidenceId === msg.id ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                            {expandedEvidenceId === msg.id ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
                           </button>
 
                           {expandedEvidenceId === msg.id && (
@@ -268,14 +258,14 @@ export const QueryWorkspacePage: React.FC = () => {
         {isLoading && (
           <div className="qw-message-row bot-row">
             <div className="qw-avatar assistant">
-              <Bot size={16} />
+              <Bot size={15} />
             </div>
             <div className="qw-message-content">
               <div className="qw-loading-bubble">
                 <span className="qw-loading-dot" />
                 <span className="qw-loading-dot" />
                 <span className="qw-loading-dot" />
-                <span className="qw-loading-text">Finding relevant resources & verifying evidence...</span>
+                <span className="qw-loading-text">Selecting resources & verifying evidence...</span>
               </div>
             </div>
           </div>
@@ -284,17 +274,17 @@ export const QueryWorkspacePage: React.FC = () => {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* 3. Error Banner if any */}
+      {/* Error Banner if any */}
       {errorMessage && (
         <div className="qw-error-banner">
-          <AlertTriangle size={16} />
+          <AlertTriangle size={15} />
           <span>{errorMessage}</span>
         </div>
       )}
 
-      {/* 4. Chat Input Area */}
-      <footer className="qw-footer">
-        <div className="qw-input-container">
+      {/* Fixed / Sticky Bottom Composer */}
+      <footer className="qw-composer-footer">
+        <div className="qw-composer-container">
           <textarea
             ref={inputRef}
             className="qw-textarea"
@@ -310,13 +300,13 @@ export const QueryWorkspacePage: React.FC = () => {
             className="qw-send-btn"
             onClick={() => handleSend()}
             disabled={!inputText.trim() || isLoading}
-            aria-label="Send message"
+            aria-label="Send question"
           >
-            <Send size={16} />
+            <Send size={15} />
           </button>
         </div>
-        <div className="qw-input-hint">
-          Press <strong>Enter</strong> to send • <strong>Shift + Enter</strong> for a new line • Answers are grounded in verified documentation
+        <div className="qw-composer-hint">
+          Press <strong>Enter</strong> to send • <strong>Shift + Enter</strong> for a new line • Grounded in verified evidence
         </div>
       </footer>
     </div>

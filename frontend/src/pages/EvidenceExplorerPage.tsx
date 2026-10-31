@@ -6,6 +6,9 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronUp,
+  Shield,
+  Layers,
+  Sparkles,
 } from 'lucide-react';
 import {
   inspectEvidenceForQuestion,
@@ -37,7 +40,6 @@ export const EvidenceExplorerPage: React.FC = () => {
     const res = await inspectEvidenceForQuestion(target);
     if (res.isAvailable && res.data) {
       setInspection(res.data);
-      // Auto-expand first item
       if (res.data.evidenceItems.length > 0) {
         setExpandedCardId(res.data.evidenceItems[0].id);
       }
@@ -54,6 +56,13 @@ export const EvidenceExplorerPage: React.FC = () => {
   const toggleExpand = (id: string) => {
     setExpandedCardId((prev) => (prev === id ? null : id));
   };
+
+  const avgAuthority = inspection && inspection.evidenceItems.length > 0
+    ? Math.round(
+        inspection.evidenceItems.reduce((acc, curr) => acc + curr.authorityPercent, 0) /
+          inspection.evidenceItems.length
+      )
+    : 85;
 
   return (
     <div className="ee-container">
@@ -73,7 +82,7 @@ export const EvidenceExplorerPage: React.FC = () => {
         </div>
       </header>
 
-      {/* 2. Question Search & Inspection Bar */}
+      {/* 2. Prominent Question Search & Inspection Bar */}
       <section className="ee-input-section">
         <div className="ee-input-wrap">
           <Search size={18} className="ee-search-icon" />
@@ -99,7 +108,7 @@ export const EvidenceExplorerPage: React.FC = () => {
 
         {/* Suggested Questions */}
         <div className="ee-samples-row">
-          <span className="ee-samples-label">Examples:</span>
+          <span className="ee-samples-label">Try with:</span>
           {SAMPLE_QUESTIONS.map((sq, idx) => (
             <button
               key={idx}
@@ -116,139 +125,153 @@ export const EvidenceExplorerPage: React.FC = () => {
         </div>
       </section>
 
+      {/* 3. Error Banner */}
       {errorMessage && (
         <div className="ee-error-banner">
-          <AlertTriangle size={16} />
+          <AlertTriangle size={15} />
           <span>{errorMessage}</span>
         </div>
       )}
 
-      {/* 3. Query Summary Card */}
+      {/* 4. Inspection Results Summary Card */}
       {inspection && (
         <section className="ee-summary-card">
           <div className="ee-summary-top">
-            <span className="ee-summary-label">Active Question</span>
+            <span className="ee-summary-label">Active Question Inspection</span>
             <span className="ee-verdict-pill">
-              <CheckCircle2 size={13} className="text-emerald" />
+              <CheckCircle2 size={12} />
               <span>{inspection.verdictLabel}</span>
             </span>
           </div>
+
           <h2 className="ee-active-question">&ldquo;{inspection.question}&rdquo;</h2>
+
           <div className="ee-summary-meta">
-            <span>Evaluated <strong>{inspection.totalSourcesEvaluated}</strong> sources</span>
-            <span>•</span>
-            <span>Found <strong>{inspection.totalPassagesRetrieved}</strong> grounded evidence passages</span>
+            <span className="ee-meta-pill">
+              <Layers size={13} />
+              <span>{inspection.totalPassagesRetrieved} Passages Selected</span>
+            </span>
+            <span className="ee-meta-pill">
+              <Shield size={13} />
+              <span>Avg Authority: {avgAuthority}%</span>
+            </span>
+            <span className="ee-meta-pill">
+              <Sparkles size={13} />
+              <span>{inspection.totalSourcesEvaluated} Connected Resources Evaluated</span>
+            </span>
           </div>
         </section>
       )}
 
-      {/* 4. Evidence Passages List */}
-      <section className="ee-passages-section">
-        <h3 className="ee-section-heading">Retrieved Supporting Evidence</h3>
+      {/* 5. Retrieved Evidence Passages List */}
+      {inspection && (
+        <section className="ee-passages-section">
+          <div className="ee-section-heading">
+            <h3 className="ee-heading-title">Retrieved Evidence Passages</h3>
+            <span className="ee-heading-desc">
+              Original text passages evaluated and approved by EvidenRoute
+            </span>
+          </div>
 
-        {inspection ? (
-          inspection.evidenceItems.length > 0 ? (
-            <div className="ee-cards-list">
-              {inspection.evidenceItems.map((item, idx) => (
-                <div key={item.id} className="ee-evidence-card">
+          <div className="ee-passages-list">
+            {inspection.evidenceItems.map((item, idx) => {
+              const isExpanded = expandedCardId === item.id;
+              return (
+                <div key={item.id} className="ee-passage-card">
                   {/* Card Header */}
                   <div
                     className="ee-card-header"
                     onClick={() => toggleExpand(item.id)}
                     role="button"
                     tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        toggleExpand(item.id);
+                      }
+                    }}
                   >
-                    <div className="ee-card-header-left">
-                      <span className="ee-rank-pill">#{idx + 1}</span>
+                    <div className="ee-card-title-group">
+                      <span className="ee-index-badge">#{idx + 1}</span>
                       <div>
-                        <div className="ee-card-title-row">
-                          <h4 className="ee-source-name">{item.sourceName}</h4>
-                          <span className="ee-cat-badge">{item.sourceCategory}</span>
-                          <span className="ee-doc-name">{item.originalDocument}</span>
+                        <div className="ee-source-name-row">
+                          <span className="ee-source-title">{item.sourceName}</span>
+                          <span className="ee-category-tag">{item.sourceCategory}</span>
                         </div>
-                        <span className="ee-citation-code">{item.citation}</span>
+                        <span className="ee-doc-title">{item.originalDocument}</span>
                       </div>
                     </div>
 
                     <div className="ee-card-header-right">
-                      <div className="ee-quality-pill" title="Relevance match">
-                        <span>{item.relevancePercent}% Match</span>
+                      <div className="ee-quality-pill">
+                        <span className="ee-quality-label">Authority</span>
+                        <span className="ee-quality-score">{item.authorityPercent}%</span>
                       </div>
-                      <div className="ee-expand-icon">
-                        {expandedCardId === item.id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                      <div className="ee-toggle-arrow">
+                        {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                       </div>
                     </div>
                   </div>
 
-                  {/* Highlighted Passage Excerpt */}
-                  <div className="ee-passage-box">
-                    <div className="ee-passage-quote">&ldquo;{item.passageContent}&rdquo;</div>
-                  </div>
-
-                  {/* Why Retrieved & How It Supports */}
-                  <div className="ee-explanations-grid">
-                    <div className="ee-explanation-cell">
-                      <span className="ee-cell-label">Why This Was Retrieved:</span>
-                      <p className="ee-cell-text">{item.retrievalReason}</p>
+                  {/* Card Body */}
+                  <div className={`ee-card-body ${isExpanded ? 'open' : 'collapsed'}`}>
+                    {/* The Passage Content */}
+                    <div className="ee-quote-block">
+                      <p className="ee-passage-text">&ldquo;{item.passageContent}&rdquo;</p>
                     </div>
 
-                    <div className="ee-explanation-cell">
-                      <span className="ee-cell-label">How It Supports The Answer:</span>
-                      <p className="ee-cell-text">{item.answerSupportExplanation}</p>
-                    </div>
-                  </div>
-
-                  {/* Conflicting information if present */}
-                  {item.conflictingInformation && (
-                    <div className="ee-conflict-note">
-                      <AlertTriangle size={14} className="text-warning" />
-                      <span><strong>Notice:</strong> {item.conflictingInformation}</span>
-                    </div>
-                  )}
-
-                  {/* Expandable Details Drawer */}
-                  {expandedCardId === item.id && (
-                    <div className="ee-details-drawer">
-                      <div className="ee-drawer-title">Evidence Quality Breakdown:</div>
-                      <div className="ee-drawer-grid">
-                        <div className="ee-drawer-item">
-                          <span className="ee-drawer-label">Relevance Match:</span>
-                          <span className="ee-drawer-val text-blue">{item.relevancePercent}%</span>
-                        </div>
-                        <div className="ee-drawer-item">
-                          <span className="ee-drawer-label">Source Authority:</span>
-                          <span className="ee-drawer-val text-purple">{item.authorityPercent}% (Trusted)</span>
-                        </div>
-                        <div className="ee-drawer-item">
-                          <span className="ee-drawer-label">Freshness:</span>
-                          <span className="ee-drawer-val text-orange">{item.freshnessPercent}%</span>
-                        </div>
-                        <div className="ee-drawer-item">
-                          <span className="ee-drawer-label">Verification Status:</span>
-                          <span className="ee-drawer-val text-emerald">{item.correctnessStatus}</span>
-                        </div>
+                    {/* Explanatory Details */}
+                    <div className="ee-details-grid">
+                      <div className="ee-detail-item">
+                        <span className="ee-detail-label">Why This Was Selected:</span>
+                        <p className="ee-detail-val">{item.retrievalReason}</p>
                       </div>
-                      <div className="ee-drawer-footer">
-                        <span className="ee-tech-id">System Reference: {item.technicalId}</span>
+
+                      <div className="ee-detail-item">
+                        <span className="ee-detail-label">How It Supports Answer:</span>
+                        <p className="ee-detail-val">{item.answerSupportExplanation}</p>
                       </div>
                     </div>
-                  )}
+
+                    {/* Score Bar Breakdown */}
+                    <div className="ee-factors-row">
+                      <div className="ee-factor-pill">
+                        <span className="f-label">Relevance:</span>
+                        <span className="f-val text-blue">{item.relevancePercent}%</span>
+                      </div>
+                      <div className="ee-factor-pill">
+                        <span className="f-label">Freshness:</span>
+                        <span className="f-val text-orange">{item.freshnessPercent}%</span>
+                      </div>
+                      <div className="ee-factor-pill">
+                        <span className="f-label">Correctness:</span>
+                        <span className="f-val text-emerald">{item.correctnessStatus}</span>
+                      </div>
+                      <div className="ee-factor-pill">
+                        <span className="f-label">Authority:</span>
+                        <span className="f-val text-purple">{item.authorityPercent}%</span>
+                      </div>
+                    </div>
+
+                    {/* Footer Provenance */}
+                    <div className="ee-card-footer">
+                      <div className="ee-provenance">
+                        <span>Original Identifier: <code>{item.technicalId}</code></span>
+                        <span>•</span>
+                        <span>Timestamp: {item.timestamp}</span>
+                      </div>
+                      <span className="ee-verified-flag">
+                        <CheckCircle2 size={13} className="text-emerald" />
+                        <span>Verified Grounding</span>
+                      </span>
+                    </div>
+                  </div>
                 </div>
-              ))}
-            </div>
-          ) : (
-            <div className="ee-empty-state">
-              <FileSearch size={32} className="text-muted" />
-              <p>No evidence passages found for this inquiry.</p>
-            </div>
-          )
-        ) : (
-          <div className="ee-loading-state">
-            <span className="ee-spinner" />
-            <span>Finding grounded evidence passages...</span>
+              );
+            })}
           </div>
-        )}
-      </section>
+        </section>
+      )}
     </div>
   );
 };

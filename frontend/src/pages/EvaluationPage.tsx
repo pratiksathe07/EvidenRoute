@@ -6,10 +6,10 @@ import {
   ShieldCheck,
   FileSearch,
   TrendingUp,
-  Zap,
   BarChart2,
   Info,
   Scale,
+  Sparkles,
 } from 'lucide-react';
 import {
   fetchEvaluationReport,
@@ -19,15 +19,12 @@ import './EvaluationPage.css';
 
 export const EvaluationPage: React.FC = () => {
   const [report, setReport] = useState<EvaluationReport | null>(null);
-  
 
   const loadReport = useCallback(async () => {
-    
     const res = await fetchEvaluationReport();
     if (res.data) {
       setReport(res.data);
     }
-    
   }, []);
 
   useEffect(() => {
@@ -37,14 +34,14 @@ export const EvaluationPage: React.FC = () => {
   const getFactorIcon = (id: string) => {
     switch (id) {
       case 'relevance':
-        return <FileSearch size={18} className="text-blue" />;
+        return <FileSearch size={16} className="text-blue" />;
       case 'freshness':
-        return <Clock size={18} className="text-orange" />;
+        return <Clock size={16} className="text-orange" />;
       case 'correctness':
-        return <CheckCircle2 size={18} className="text-emerald" />;
+        return <CheckCircle2 size={16} className="text-emerald" />;
       case 'authority':
       default:
-        return <ShieldCheck size={18} className="text-purple" />;
+        return <ShieldCheck size={16} className="text-purple" />;
     }
   };
 
@@ -61,35 +58,41 @@ export const EvaluationPage: React.FC = () => {
           </div>
           <h1 className="eval-title">Evidence Evaluation</h1>
           <p className="eval-subtitle">
-            Understand how good and trustworthy the retrieved evidence is across four foundational factors:
+            Understand how good and trustworthy retrieved evidence is across four foundational factors:
             Relevance, Freshness, Correctness, and Authority.
           </p>
         </div>
       </header>
 
-      {/* 2. Overall Quality & Summary Card */}
+      {/* 2. Compact Overall Quality & Dataset Summary Card */}
       {report && (
         <section className="eval-hero-card">
           <div className="eval-hero-score-box">
             <span className="eval-hero-score-label">Overall Evidence Quality</span>
             <div className="eval-hero-score-val">{report.overallQualityScore}%</div>
             <div className="eval-hero-verdict-pill">
-              <CheckCircle2 size={13} />
+              <CheckCircle2 size={12} />
               <span>{report.overallVerdict}</span>
             </div>
           </div>
 
           <div className="eval-hero-summary-box">
-            <h2 className="eval-summary-title">Dataset Evaluation Summary</h2>
+            <div className="eval-summary-header-row">
+              <h2 className="eval-summary-title">Dataset Evaluation Summary</h2>
+              <span className="eval-summary-badge">
+                <Sparkles size={12} />
+                <span>Verified Metrics</span>
+              </span>
+            </div>
             <p className="eval-summary-text">{report.summaryText}</p>
             <div className="eval-summary-stats">
               <div className="eval-stat-chip">
                 <span className="stat-label">Evaluated Benchmarks</span>
-                <span className="stat-val">{report.comparison.total_queries_evaluated} Benchmark Questions</span>
+                <span className="stat-val">{report.comparison.total_queries_evaluated} Questions</span>
               </div>
               <div className="eval-stat-chip">
                 <span className="stat-label">Irrelevant Noise Pruned</span>
-                <span className="stat-val text-emerald">{report.comparison.noise_reduction_pct}% Noise Reduction</span>
+                <span className="stat-val text-emerald">{report.comparison.noise_reduction_pct}% Reduction</span>
               </div>
               <div className="eval-stat-chip">
                 <span className="stat-label">Precision Gain</span>
@@ -100,10 +103,10 @@ export const EvaluationPage: React.FC = () => {
         </section>
       )}
 
-      {/* 3. The Four Main Evaluation Factors */}
+      {/* 3. The Four Main Evaluation Factors (Visually organized & compact) */}
       <section className="eval-factors-section">
         <div className="eval-section-title-wrap">
-          <Scale size={18} className="text-accent" />
+          <Scale size={16} className="text-accent" />
           <h2 className="eval-section-title">The Four Evidence Factors</h2>
         </div>
 
@@ -136,7 +139,7 @@ export const EvaluationPage: React.FC = () => {
                 <p className="eval-factor-explanation">{factor.explanation}</p>
 
                 <div className="eval-factor-basis">
-                  <Info size={12} />
+                  <Info size={11} />
                   <span>{factor.measurementBasis}</span>
                 </div>
               </div>
@@ -149,7 +152,7 @@ export const EvaluationPage: React.FC = () => {
       {report && (
         <section className="eval-comparison-section">
           <div className="eval-section-title-wrap">
-            <BarChart2 size={18} className="text-accent" />
+            <BarChart2 size={16} className="text-accent" />
             <h2 className="eval-section-title">Benchmark Comparison: Naive Baseline vs EvidenRoute</h2>
           </div>
 
@@ -174,7 +177,7 @@ export const EvaluationPage: React.FC = () => {
                     <td className="text-primary font-mono font-semibold">{row.evidenroute}</td>
                     <td>
                       <span className="eval-improvement-badge positive">
-                        <TrendingUp size={13} />
+                        <TrendingUp size={12} />
                         <span>{row.improvement}</span>
                       </span>
                     </td>
@@ -190,7 +193,7 @@ export const EvaluationPage: React.FC = () => {
       {report && report.testQueries.length > 0 && (
         <section className="eval-queries-section">
           <div className="eval-section-title-wrap">
-            <Zap size={18} className="text-accent" />
+            <Sparkles size={16} className="text-accent" />
             <h2 className="eval-section-title">Performance Across Test Queries</h2>
           </div>
 
